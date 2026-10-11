@@ -58,7 +58,7 @@ src/contracts/      generated types (do not edit)
 docs/               database guide, decision log
 ```
 
-Conventions: snake_case database columns, `TLogger` instead of `console`, services throw `TError` subclasses, every error response is `{status, error_code, message, request_id, details?}`.
+Conventions: snake_case database columns, `TLogger` instead of `console`, services throw `VError` subclasses, every error response is `{status, error_code, message, request_id, details?}`.
 
 ## Running all three repos together
 

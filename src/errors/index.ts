@@ -8,7 +8,7 @@ export interface ErrorDetail {
  * Base class for every expected error. Rendered as the contract's
  * ErrorResponse: { status, error_code, message, request_id, details? }.
  */
-class TError extends Error {
+class VError extends Error {
   status: number;
   error_code: string;
   details?: ErrorDetail[];
@@ -41,13 +41,13 @@ class TError extends Error {
   }
 }
 
-class BadRequestError extends TError {
+class BadRequestError extends VError {
   constructor(message = 'Bad request', details?: ErrorDetail[]) {
     super({ message, status: 400, error_code: 'BAD_REQUEST', details });
   }
 }
 
-class ValidationError extends TError {
+class ValidationError extends VError {
   constructor(details: ErrorDetail[]) {
     super({
       message: 'The request is invalid.',
@@ -58,38 +58,38 @@ class ValidationError extends TError {
   }
 }
 
-class UnauthorizedError extends TError {
+class UnauthorizedError extends VError {
   constructor(message = 'Unauthorized') {
     super({ message, status: 401, error_code: 'UNAUTHORIZED' });
   }
 }
 
-class ForbiddenError extends TError {
+class ForbiddenError extends VError {
   constructor(message = 'Forbidden') {
     super({ message, status: 403, error_code: 'FORBIDDEN' });
   }
 }
 
-class NotFoundError extends TError {
+class NotFoundError extends VError {
   constructor(message = 'Not found') {
     super({ message, status: 404, error_code: 'NOT_FOUND' });
   }
 }
 
-class ConflictError extends TError {
+class ConflictError extends VError {
   constructor(message = 'Conflict') {
     super({ message, status: 409, error_code: 'CONFLICT' });
   }
 }
 
-class InternalServerError extends TError {
+class InternalServerError extends VError {
   constructor(message = 'Internal server error.') {
     super({ message, status: 500, error_code: 'INTERNAL_ERROR' });
   }
 }
 
 export {
-  TError,
+  VError,
   BadRequestError,
   ValidationError,
   UnauthorizedError,

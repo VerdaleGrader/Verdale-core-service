@@ -1,7 +1,7 @@
 import fastify, { FastifyError } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { InternalServerError, NotFoundError, TError, ValidationError } from '@/errors';
+import { InternalServerError, NotFoundError, VError, ValidationError } from '@/errors';
 import TLogger, { Layer } from '@/logging/logger';
 import SystemController from '@/controllers/system/system.controller';
 import SystemService, { ReadinessCheck } from '@/services/system/system.service';
@@ -51,8 +51,8 @@ export function buildApp({ version, readinessChecks }: AppDependencies) {
 
   // One error shape for the whole system (contracts: ErrorResponse).
   app.setErrorHandler((error: FastifyError | Error, request, reply) => {
-    let appError: TError;
-    if (error instanceof TError) {
+    let appError: VError;
+    if (error instanceof VError) {
       appError = error;
     } else if (error instanceof z.ZodError) {
       appError = new ValidationError(
@@ -63,7 +63,7 @@ export function buildApp({ version, readinessChecks }: AppDependencies) {
       typeof error.statusCode === 'number' &&
       error.statusCode < 500
     ) {
-      appError = new TError({
+      appError = new VError({
         message: error.message,
         status: error.statusCode,
         error_code: error.code ?? 'BAD_REQUEST',
