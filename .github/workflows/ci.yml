@@ -6,6 +6,18 @@ on:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: verdale
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 20
+    env:
+      # Integration tests (accounts, Spaces, permissions) run against a real database.
+      DIRECT_DATABASE_URL: postgresql://postgres:ci@localhost:5432/verdale
+      TEST_DATABASE_URL: postgresql://postgres:ci@localhost:5432/verdale
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,6 +26,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx prisma migrate deploy
       - run: npm run check
 
   migrations:

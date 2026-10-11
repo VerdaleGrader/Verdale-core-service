@@ -4,7 +4,7 @@ Core owns accounts, Spaces and permissions, problems, submissions and the publis
 
 Stack: Node 22, TypeScript, Fastify 5, Prisma 7 (Neon Postgres), Zod, winston → Better Stack, Jest.
 
-> Milestone 1 status: service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma with the `users` table, and the API contracts. Auth, Spaces, problems and submissions come in M2/M3.
+> Status: M1 gave the service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma and the API contracts. M2 adds OAuth sign-in and sessions, usernames, Spaces, members, invitations and the permission engine (see [docs/auth.md](docs/auth.md)). Problems and submissions come in M3.
 
 ## Run it
 
@@ -13,7 +13,7 @@ cp .env.example .env          # fill in the Neon dev branch URLs (docs/database.
 npm install
 npx prisma generate
 npm run db:deploy             # apply migrations to your dev branch
-npm run db:seed               # sample users
+npm run db:seed               # sample users, their personal Spaces, one public Space
 npm run dev                   # http://localhost:8080/health, /ready
 ```
 
@@ -37,6 +37,7 @@ Does not read `.env`. Override host ports with `CORE_PORT` (default 8080) and `P
 | `npm run db:migrate -- --name x` | Create and apply a migration (direct URL)                                  |
 | `npm run db:deploy`              | Apply pending migrations (release step)                                    |
 | `npm run db:seed`                | Seed development data                                                      |
+| `TEST_DATABASE_URL=… npm test`   | Also runs the database integration tests (docs/auth.md#testing)            |
 | `npm run contracts:generate`     | Regenerate `src/contracts/*.gen.ts` from `contracts/`                      |
 
 ## Layout
@@ -50,12 +51,14 @@ src/index.ts        startup, graceful shutdown (close server, close DB, flush lo
 src/routes.ts       app, request id, standard error handler, routes
 src/config/         environment schema; refuses to start when invalid
 src/controllers/    HTTP handlers
+src/permissions/    can(actor, action, resource): the one place that decides access
+src/middleware/     session cookie names, requireUser
 src/services/       business logic; throw typed errors from src/errors
 src/repositories/   Prisma queries only
 src/libs/           winston (Better Stack), Prisma, HMAC signing
 src/logging/        TLogger: layer, context, request_id on every line
 src/contracts/      generated types (do not edit)
-docs/               database guide, decision log
+docs/               database guide, auth and permissions, decision log
 ```
 
 Conventions: snake_case database columns, `TLogger` instead of `console`, services throw `VError` subclasses, every error response is `{status, error_code, message, request_id, details?}`.

@@ -17,9 +17,9 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U verdale_core -d verdale"]
+      test: ['CMD-SHELL', 'pg_isready -U verdale_core -d verdale']
       interval: 2s
       timeout: 3s
       retries: 15
@@ -29,7 +29,7 @@ services:
   migrate:
     build:
       context: .
-    command: ["npx", "prisma", "migrate", "deploy"]
+    command: ['npx', 'prisma', 'migrate', 'deploy']
     environment:
       DATABASE_URL: &database_url postgresql://verdale_core:local-postgres-password@postgres:5432/verdale
       DIRECT_DATABASE_URL: *database_url
@@ -43,17 +43,22 @@ services:
     environment:
       ENV: local
       HOST: 0.0.0.0
-      PORT: "8080"
+      PORT: '8080'
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: *database_url
-      DATABASE_POOL_MAX: "10"
+      DATABASE_POOL_MAX: '10'
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     ports:
-      - "127.0.0.1:${CORE_PORT:-8080}:8080"
+      - '127.0.0.1:${CORE_PORT:-8080}:8080'
     depends_on:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/health']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -62,11 +67,11 @@ services:
 
   # Sample users. Needs dev dependencies (ts-node), so it builds the build stage.
   seed:
-    profiles: ["seed"]
+    profiles: ['seed']
     build:
       context: .
       target: build
-    command: ["npm", "run", "db:seed"]
+    command: ['npm', 'run', 'db:seed']
     environment:
       DATABASE_URL: *database_url
       DIRECT_DATABASE_URL: *database_url

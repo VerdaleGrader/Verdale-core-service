@@ -1,11 +1,12 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
-    Starting skeleton: endpoints are added story by story (auth in GRD-11,
-    Spaces in M2, problems and submissions in M3).
+    Endpoints are added story by story: accounts and Spaces (M2), problems and
+    submissions (M3). Everything except `/health` and `/ready` lives under `/api/v1`,
+    the prefix the web app proxies to Core.
 
     Every error uses `ErrorResponse`. Every response carries an
     `X-Request-Id` header; when the request sends a UUID in `X-Request-Id`,
@@ -42,6 +43,609 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadinessResponse'
+  /api/v1/auth/providers:
+    get:
+      operationId: listAuthProviders
+      tags: [auth]
+      summary: Sign-in methods that are enabled (for the login buttons)
+      responses:
+        '200':
+          description: Enabled providers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OAuthProvider'
+  /api/v1/auth/oauth/{provider}/start:
+    get:
+      operationId: startOAuth
+      tags: [auth]
+      summary: Begin sign-in with a provider
+      description: |
+        Navigate the browser here (not fetch). Core sets a short-lived signed
+        cookie and redirects to the provider. Rate limited per client.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: redirect
+          in: query
+          description: Relative path to open after sign-in. Anything else is replaced by `/`.
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        '302':
+          description: Redirect to the provider
+        '404':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/auth/oauth/{provider}/callback:
+    get:
+      operationId: finishOAuth
+      tags: [auth]
+      summary: Provider redirect target (browser navigation)
+      description: |
+        Registered at the provider as `{FRONTEND_ORIGIN}/api/v1/auth/oauth/{provider}/callback`.
+        On success sets the `vd_session` cookie (httpOnly, SameSite=Lax, Secure outside local,
+        30 days) and redirects to the requested page. On any failure redirects to
+        `{FRONTEND_ORIGIN}/login?error=<code>` where code is `access_denied`, `bad_request`
+        or `not_found`. Never returns JSON.
+      parameters:
+        - $ref: '#/components/parameters/Provider'
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the web app
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: End the current session
+      description: Deletes the session on the server, so the cookie stops working even if kept.
+      responses:
+        '204':
+          description: Logged out (also when there was no session)
+        '403':
+          $ref: '#/components/responses/Error'
+  /api/v1/me:
+    get:
+      operationId: getMe
+      tags: [users]
+      summary: My account
+      security:
+        - session: []
+      responses:
+        '200':
+          description: The signed-in user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateMe
+      tags: [users]
+      summary: Change display name and/or username
+      description: |
+        Changing the username also renames the personal Space's slug in the same step.
+        Usernames and Space slugs share one namespace.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/users/{username}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Public profile (username and display name only)
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUser'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/spaces:
+    get:
+      operationId: listMySpaces
+      tags: [spaces]
+      summary: Spaces I belong to, with my role
+      description: Personal Space first, then by name. Archived Spaces are listed separately with `archived=true`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: A page of Spaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpacePage'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/invites:
+    get:
+      operationId: listMyInvites
+      tags: [invites]
+      summary: Pending invitations addressed to me
+      security:
+        - session: []
+      responses:
+        '200':
+          description: Invitations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteList'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/invites/{inviteId}/accept:
+    post:
+      operationId: acceptMyInvite
+      tags: [invites]
+      summary: Accept an invitation addressed to me
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/InviteId'
+      responses:
+        '200':
+          description: Joined the Space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteOutcome'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/invites/{inviteId}/decline:
+    post:
+      operationId: declineMyInvite
+      tags: [invites]
+      summary: Decline an invitation addressed to me
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/InviteId'
+      responses:
+        '200':
+          description: Declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteOutcome'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces:
+    get:
+      operationId: listPublicSpaces
+      tags: [spaces]
+      summary: Browse and search public, active Spaces
+      description: Private Spaces never appear, whoever asks and whatever the query. No login needed.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: A page of Spaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpacePage'
+        '400':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createSpace
+      tags: [spaces]
+      summary: Create a Space (the caller becomes its owner)
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSpaceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}:
+    get:
+      operationId: getSpace
+      tags: [spaces]
+      summary: Read a Space
+      description: |
+        Public Spaces are readable without logging in. A private Space answers 404 to
+        everyone who is not a member, exactly like a Space that does not exist.
+        `member_count` is present for members only.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: The Space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateSpace
+      tags: [spaces]
+      summary: Edit name, description or visibility (owner only; the slug never changes)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSpaceRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/archive:
+    post:
+      operationId: archiveSpace
+      tags: [spaces]
+      summary: Archive a Space (owner only)
+      description: |
+        Problems stay readable but nothing can be created, edited, published or submitted,
+        and settings and members are frozen. A personal Space cannot be archived (409).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/members:
+    get:
+      operationId: listMembers
+      tags: [members]
+      summary: Members of a Space (members only)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Members, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Member'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/members/{username}:
+    patch:
+      operationId: changeMemberRole
+      tags: [members]
+      summary: Change a member's role (owner only)
+      description: Demoting the last owner is refused with 409.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Username'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  $ref: '#/components/schemas/Role'
+      responses:
+        '200':
+          description: Updated member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: removeMember
+      tags: [members]
+      summary: Remove a member (owner only)
+      description: Removing the last owner is refused with 409.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/leave:
+    post:
+      operationId: leaveSpace
+      tags: [members]
+      summary: Leave a Space
+      description: The last owner cannot leave (409). Allowed in an archived Space.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '204':
+          description: Left
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/invites:
+    get:
+      operationId: listSpaceInvites
+      tags: [invites]
+      summary: Pending, unexpired invitations of a Space (owner only)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Invitations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteList'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Invite by link, or by username (owner only)
+      description: |
+        Without `username` the result carries a `link` that anyone logged in can use once.
+        With `username` only that user can answer it. The `token` is returned once and only
+        its hash is stored. Invitations never grant `owner`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/invites/{inviteId}:
+    delete:
+      operationId: revokeInvite
+      tags: [invites]
+      summary: Revoke a pending invitation (owner only)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/InviteId'
+      responses:
+        '204':
+          description: Revoked
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/invites/{token}:
+    get:
+      operationId: previewInvite
+      tags: [invites]
+      summary: What the holder of an invitation link sees (no login needed)
+      parameters:
+        - $ref: '#/components/parameters/InviteToken'
+      responses:
+        '200':
+          description: The invitation, with `status` pending, accepted, declined, revoked or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/invites/{token}/accept:
+    post:
+      operationId: acceptInvite
+      tags: [invites]
+      summary: Accept an invitation by its link token
+      description: |
+        410 when it is expired, revoked, already used, or its Space is archived.
+        409 when you are already a member (the invitation is not used up).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/InviteToken'
+      responses:
+        '200':
+          description: Joined the Space
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteOutcome'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v1/invites/{token}/decline:
+    post:
+      operationId: declineInvite
+      tags: [invites]
+      summary: Decline an invitation by its link token
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/InviteToken'
+      responses:
+        '200':
+          description: Declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteOutcome'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
 components:
   responses:
     Error:
@@ -50,7 +654,284 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: vd_session
+      description: |
+        Server-side session set by the OAuth callback. State-changing requests that carry it
+        must also send `Origin` equal to the web app's origin (CSRF check, 403 otherwise).
+  parameters:
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/OAuthProvider'
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Space slug (case-insensitive)
+      schema:
+        type: string
+    Username:
+      name: username
+      in: path
+      required: true
+      schema:
+        type: string
+    InviteId:
+      name: inviteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InviteToken:
+      name: token
+      in: path
+      required: true
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    Query:
+      name: q
+      in: query
+      description: Case-insensitive search in the Space name (public listing also matches the slug)
+      schema:
+        type: string
+        maxLength: 80
   schemas:
+    OAuthProvider:
+      type: string
+      enum: [github, google]
+    Role:
+      type: string
+      enum: [owner, editor, solver]
+    Me:
+      type: object
+      description: The account owner's view. Other users never see `id` or `email`.
+      required: [id, email, username, display_name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        username:
+          type: string
+          description: 3-32 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit
+        display_name:
+          type: string
+          maxLength: 64
+        created_at:
+          type: string
+          format: date-time
+    UpdateMeRequest:
+      type: object
+      minProperties: 1
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        username:
+          type: string
+    PublicUser:
+      type: object
+      required: [username, display_name]
+      properties:
+        username:
+          type: string
+        display_name:
+          type: string
+    Space:
+      type: object
+      required:
+        [id, name, slug, description, visibility, is_personal, archived_at, created_at, my_role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum: [public, private]
+        is_personal:
+          type: boolean
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        my_role:
+          allOf:
+            - $ref: '#/components/schemas/Role'
+          nullable: true
+          description: null for visitors and non-members
+        member_count:
+          type: integer
+          description: Members only
+    SpacePage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Space'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    CreateSpaceRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        slug:
+          type: string
+          description: Same rules as a username; not already used by a Space or a user
+        description:
+          type: string
+          maxLength: 500
+          default: ''
+        visibility:
+          type: string
+          enum: [public, private]
+          default: private
+    UpdateSpaceRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        visibility:
+          type: string
+          enum: [public, private]
+    Member:
+      allOf:
+        - $ref: '#/components/schemas/PublicUser'
+        - type: object
+          required: [role, joined_at]
+          properties:
+            role:
+              $ref: '#/components/schemas/Role'
+            joined_at:
+              type: string
+              format: date-time
+    CreateInviteRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [editor, solver]
+        username:
+          type: string
+          description: Address the invitation to one user. Omit for a link invitation.
+        expires_in_days:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 7
+    Invite:
+      type: object
+      required: [id, space, role, status, expires_at, created_at, invited_by, invited_user]
+      properties:
+        id:
+          type: string
+          format: uuid
+        space:
+          type: object
+          required: [name, slug]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+        role:
+          type: string
+          enum: [editor, solver]
+        status:
+          type: string
+          enum: [pending, accepted, declined, revoked, expired]
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        invited_by:
+          $ref: '#/components/schemas/PublicUser'
+        invited_user:
+          allOf:
+            - $ref: '#/components/schemas/PublicUser'
+          nullable: true
+        token:
+          type: string
+          description: Only in the response that creates the invitation
+        link:
+          type: string
+          description: Web path that accepts a link invitation, only when created without `username`
+    InviteList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invite'
+    InviteOutcome:
+      type: object
+      required: [space, role, status]
+      properties:
+        space:
+          type: object
+          required: [name, slug]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        status:
+          type: string
+          enum: [accepted, declined]
     HealthResponse:
       type: object
       required: [status, version]

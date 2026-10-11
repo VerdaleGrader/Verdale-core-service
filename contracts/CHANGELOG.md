@@ -9,6 +9,11 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.2.0 (2026-10-11)
+
+- Additive. Core public API gains accounts and Spaces (GRD-10 to GRD-19): OAuth sign-in (`/api/v1/auth/*`), `/api/v1/me`, `/api/v1/users/{username}`, Spaces, members and invitations. New `session` security scheme (cookie `vd_session`) and the CSRF `Origin` rule. Judge API is unchanged (version bumped only to keep both files aligned).
+- Deploy order: Core first, then Frontend re-pins with `contracts:sync`.
+
 ## 0.1.0 (2026-10-11)
 
 - First version: Core public API skeleton (`/health`, `/ready`, `ErrorResponse`), Judge internal API (`POST /internal/jobs`, `GET /internal/jobs/{job_id}`, result callback), HMAC signing spec and test vectors.
