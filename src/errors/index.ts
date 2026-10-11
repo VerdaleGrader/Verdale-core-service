@@ -82,6 +82,12 @@ class ConflictError extends VError {
   }
 }
 
+class GoneError extends VError {
+  constructor(message = 'Gone') {
+    super({ message, status: 410, error_code: 'GONE' });
+  }
+}
+
 class InternalServerError extends VError {
   constructor(message = 'Internal server error.') {
     super({ message, status: 500, error_code: 'INTERNAL_ERROR' });
@@ -96,5 +102,6 @@ export {
   ForbiddenError,
   NotFoundError,
   ConflictError,
+  GoneError,
   InternalServerError,
 };

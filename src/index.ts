@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { ConfigError, loadConfig } from '@/config';
 import { configureLogger, flushLogs, logger as rootLogger } from '@/libs/winston';
+import { createOAuthProviders } from '@/libs/oauth';
 import { createDatabase } from '@/libs/prisma';
 import TLogger, { Layer } from '@/logging/logger';
 import { buildApp } from '@/routes';
@@ -24,7 +25,15 @@ async function main() {
   const app = buildApp({
     version: config.version,
     readinessChecks: [{ name: 'database', check: database.isReachable }],
+    api: {
+      prisma: database.prisma,
+      auth: config.auth,
+      oauthProviders: createOAuthProviders(config.auth.providers),
+    },
   });
+  if (Object.keys(config.auth.providers).length === 0) {
+    logger.warn({ message: 'No OAuth provider is configured: nobody can log in' });
+  }
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {

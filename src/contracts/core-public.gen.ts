@@ -38,10 +38,535 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/auth/providers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Sign-in methods that are enabled (for the login buttons) */
+    get: operations['listAuthProviders'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/oauth/{provider}/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Begin sign-in with a provider
+     * @description Navigate the browser here (not fetch). Core sets a short-lived signed
+     *     cookie and redirects to the provider. Rate limited per client.
+     */
+    get: operations['startOAuth'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/oauth/{provider}/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Provider redirect target (browser navigation)
+     * @description Registered at the provider as `{FRONTEND_ORIGIN}/api/v1/auth/oauth/{provider}/callback`.
+     *     On success sets the `vd_session` cookie (httpOnly, SameSite=Lax, Secure outside local,
+     *     30 days) and redirects to the requested page. On any failure redirects to
+     *     `{FRONTEND_ORIGIN}/login?error=<code>` where code is `access_denied`, `bad_request`
+     *     or `not_found`. Never returns JSON.
+     */
+    get: operations['finishOAuth'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/auth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * End the current session
+     * @description Deletes the session on the server, so the cookie stops working even if kept.
+     */
+    post: operations['logout'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** My account */
+    get: operations['getMe'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change display name and/or username
+     * @description Changing the username also renames the personal Space's slug in the same step.
+     *     Usernames and Space slugs share one namespace.
+     */
+    patch: operations['updateMe'];
+    trace?: never;
+  };
+  '/api/v1/users/{username}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Public profile (username and display name only) */
+    get: operations['getUser'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/spaces': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Spaces I belong to, with my role
+     * @description Personal Space first, then by name. Archived Spaces are listed separately with `archived=true`.
+     */
+    get: operations['listMySpaces'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pending invitations addressed to me */
+    get: operations['listMyInvites'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/invites/{inviteId}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Accept an invitation addressed to me */
+    post: operations['acceptMyInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/invites/{inviteId}/decline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Decline an invitation addressed to me */
+    post: operations['declineMyInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Browse and search public, active Spaces
+     * @description Private Spaces never appear, whoever asks and whatever the query. No login needed.
+     */
+    get: operations['listPublicSpaces'];
+    put?: never;
+    /** Create a Space (the caller becomes its owner) */
+    post: operations['createSpace'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read a Space
+     * @description Public Spaces are readable without logging in. A private Space answers 404 to
+     *     everyone who is not a member, exactly like a Space that does not exist.
+     *     `member_count` is present for members only.
+     */
+    get: operations['getSpace'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Edit name, description or visibility (owner only; the slug never changes) */
+    patch: operations['updateSpace'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archive a Space (owner only)
+     * @description Problems stay readable but nothing can be created, edited, published or submitted,
+     *     and settings and members are frozen. A personal Space cannot be archived (409).
+     */
+    post: operations['archiveSpace'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Members of a Space (members only) */
+    get: operations['listMembers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/members/{username}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove a member (owner only)
+     * @description Removing the last owner is refused with 409.
+     */
+    delete: operations['removeMember'];
+    options?: never;
+    head?: never;
+    /**
+     * Change a member's role (owner only)
+     * @description Demoting the last owner is refused with 409.
+     */
+    patch: operations['changeMemberRole'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/leave': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Leave a Space
+     * @description The last owner cannot leave (409). Allowed in an archived Space.
+     */
+    post: operations['leaveSpace'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pending, unexpired invitations of a Space (owner only) */
+    get: operations['listSpaceInvites'];
+    put?: never;
+    /**
+     * Invite by link, or by username (owner only)
+     * @description Without `username` the result carries a `link` that anyone logged in can use once.
+     *     With `username` only that user can answer it. The `token` is returned once and only
+     *     its hash is stored. Invitations never grant `owner`.
+     */
+    post: operations['createInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/invites/{inviteId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke a pending invitation (owner only) */
+    delete: operations['revokeInvite'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/invites/{token}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** What the holder of an invitation link sees (no login needed) */
+    get: operations['previewInvite'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/invites/{token}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept an invitation by its link token
+     * @description 410 when it is expired, revoked, already used, or its Space is archived.
+     *     409 when you are already a member (the invitation is not used up).
+     */
+    post: operations['acceptInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/invites/{token}/decline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Decline an invitation by its link token */
+    post: operations['declineInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @enum {string} */
+    OAuthProvider: 'github' | 'google';
+    /** @enum {string} */
+    Role: 'owner' | 'editor' | 'solver';
+    /** @description The account owner's view. Other users never see `id` or `email`. */
+    Me: {
+      /** Format: uuid */
+      id: string;
+      email: string;
+      /** @description 3-32 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit */
+      username: string;
+      display_name: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    UpdateMeRequest: {
+      display_name?: string;
+      username?: string;
+    };
+    PublicUser: {
+      username: string;
+      display_name: string;
+    };
+    Space: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      /** @enum {string} */
+      visibility: 'public' | 'private';
+      is_personal: boolean;
+      /** Format: date-time */
+      archived_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** @description null for visitors and non-members */
+      my_role: components['schemas']['Role'] | null;
+      /** @description Members only */
+      member_count?: number;
+    };
+    SpacePage: {
+      items: components['schemas']['Space'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    CreateSpaceRequest: {
+      name: string;
+      /** @description Same rules as a username; not already used by a Space or a user */
+      slug: string;
+      /** @default  */
+      description: string;
+      /**
+       * @default private
+       * @enum {string}
+       */
+      visibility: 'public' | 'private';
+    };
+    UpdateSpaceRequest: {
+      name?: string;
+      description?: string;
+      /** @enum {string} */
+      visibility?: 'public' | 'private';
+    };
+    Member: components['schemas']['PublicUser'] & {
+      role: components['schemas']['Role'];
+      /** Format: date-time */
+      joined_at: string;
+    };
+    CreateInviteRequest: {
+      /** @enum {string} */
+      role: 'editor' | 'solver';
+      /** @description Address the invitation to one user. Omit for a link invitation. */
+      username?: string;
+      /** @default 7 */
+      expires_in_days: number;
+    };
+    Invite: {
+      /** Format: uuid */
+      id: string;
+      space: {
+        name: string;
+        slug: string;
+      };
+      /** @enum {string} */
+      role: 'editor' | 'solver';
+      /** @enum {string} */
+      status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: date-time */
+      created_at: string;
+      invited_by: components['schemas']['PublicUser'];
+      invited_user: components['schemas']['PublicUser'] | null;
+      /** @description Only in the response that creates the invitation */
+      token?: string;
+      /** @description Web path that accepts a link invitation, only when created without `username` */
+      link?: string;
+    };
+    InviteList: {
+      items: components['schemas']['Invite'][];
+    };
+    InviteOutcome: {
+      space: {
+        name: string;
+        slug: string;
+      };
+      role: components['schemas']['Role'];
+      /** @enum {string} */
+      status: 'accepted' | 'declined';
+    };
     HealthResponse: {
       /** @enum {string} */
       status: 'ok';
@@ -78,7 +603,18 @@ export interface components {
       };
     };
   };
-  parameters: never;
+  parameters: {
+    Provider: components['schemas']['OAuthProvider'];
+    /** @description Space slug (case-insensitive) */
+    Slug: string;
+    Username: string;
+    InviteId: string;
+    InviteToken: string;
+    Page: number;
+    PageSize: number;
+    /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
+    Query: string;
+  };
   requestBodies: never;
   headers: never;
   pathItems: never;
@@ -132,6 +668,673 @@ export interface operations {
           'application/json': components['schemas']['ReadinessResponse'];
         };
       };
+    };
+  };
+  listAuthProviders: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Enabled providers */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            providers: components['schemas']['OAuthProvider'][];
+          };
+        };
+      };
+    };
+  };
+  startOAuth: {
+    parameters: {
+      query?: {
+        /** @description Relative path to open after sign-in. Anything else is replaced by `/`. */
+        redirect?: string;
+      };
+      header?: never;
+      path: {
+        provider: components['parameters']['Provider'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to the provider */
+      302: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      404: components['responses']['Error'];
+      429: components['responses']['Error'];
+    };
+  };
+  finishOAuth: {
+    parameters: {
+      query?: {
+        code?: string;
+        state?: string;
+        error?: string;
+      };
+      header?: never;
+      path: {
+        provider: components['parameters']['Provider'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to the web app */
+      302: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      429: components['responses']['Error'];
+    };
+  };
+  logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Logged out (also when there was no session) */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      403: components['responses']['Error'];
+    };
+  };
+  getMe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The signed-in user */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      401: components['responses']['Error'];
+    };
+  };
+  updateMe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateMeRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated account */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        username: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Public profile */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PublicUser'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  listMySpaces: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
+        q?: components['parameters']['Query'];
+        archived?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of Spaces */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SpacePage'];
+        };
+      };
+      401: components['responses']['Error'];
+    };
+  };
+  listMyInvites: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Invitations */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteList'];
+        };
+      };
+      401: components['responses']['Error'];
+    };
+  };
+  acceptMyInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inviteId: components['parameters']['InviteId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Joined the Space */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteOutcome'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      410: components['responses']['Error'];
+    };
+  };
+  declineMyInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inviteId: components['parameters']['InviteId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Declined */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteOutcome'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      410: components['responses']['Error'];
+    };
+  };
+  listPublicSpaces: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
+        q?: components['parameters']['Query'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of Spaces */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SpacePage'];
+        };
+      };
+      400: components['responses']['Error'];
+    };
+  };
+  createSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSpaceRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Space'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Space */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Space'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  updateSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateSpaceRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Space'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  archiveSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archived */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Space'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  listMembers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Members, oldest first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['Member'][];
+          };
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  removeMember: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  changeMemberRole: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          role: components['schemas']['Role'];
+        };
+      };
+    };
+    responses: {
+      /** @description Updated member */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Member'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  leaveSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Left */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  listSpaceInvites: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Invitations */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteList'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateInviteRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Invite'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  revokeInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        inviteId: components['parameters']['InviteId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  previewInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: components['parameters']['InviteToken'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The invitation, with `status` pending, accepted, declined, revoked or expired */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Invite'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  acceptInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: components['parameters']['InviteToken'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Joined the Space */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteOutcome'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      410: components['responses']['Error'];
+    };
+  };
+  declineInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        token: components['parameters']['InviteToken'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Declined */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InviteOutcome'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      410: components['responses']['Error'];
     };
   };
 }

@@ -20,5 +20,124 @@ model User {
   created_at   DateTime @default(now()) @db.Timestamptz(3)
   updated_at   DateTime @updatedAt @db.Timestamptz(3)
 
+  oauth_accounts   OAuthAccount[]
+  sessions         Session[]
+  memberships      Membership[]
+  spaces_created   Space[]
+  invites_sent     Invite[]       @relation("InviteCreator")
+  invites_received Invite[]       @relation("InviteInvitee")
+
   @@map("users")
+}
+
+// Login identity at an OAuth provider (GRD-10: OAuth only, no passwords).
+model OAuthAccount {
+  id                  String   @id @default(uuid()) @db.Uuid
+  user_id             String   @db.Uuid
+  provider            String   @db.VarChar(16) // github | google
+  provider_account_id String   @db.VarChar(128)
+  created_at          DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_account_id])
+  @@index([user_id])
+  @@map("oauth_accounts")
+}
+
+// Server-side session. Only the SHA-256 of the cookie token is stored, so a
+// database leak does not give out usable sessions.
+model Session {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token_hash String   @unique @db.VarChar(64)
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+  expires_at DateTime @db.Timestamptz(3)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("sessions")
+}
+
+enum SpaceVisibility {
+  public
+  private
+}
+
+enum SpaceRole {
+  owner
+  editor
+  solver
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  declined
+  revoked
+}
+
+model Space {
+  id            String          @id @default(uuid()) @db.Uuid
+  // Who created it. Owners are the memberships with role = owner (there can
+  // be several, and ownership can move); this column never changes.
+  created_by_id String          @db.Uuid
+  name          String          @db.VarChar(80)
+  // Lower-case; shares one namespace with usernames (a personal Space's slug
+  // is its owner's username), so URLs like /<slug> never collide.
+  slug          String          @unique @db.VarChar(32)
+  description   String          @default("") @db.VarChar(500)
+  visibility    SpaceVisibility @default(private)
+  is_personal   Boolean         @default(false)
+  archived_at   DateTime?       @db.Timestamptz(3)
+  created_at    DateTime        @default(now()) @db.Timestamptz(3)
+  updated_at    DateTime        @updatedAt @db.Timestamptz(3)
+
+  created_by  User         @relation(fields: [created_by_id], references: [id])
+  memberships Membership[]
+  invites     Invite[]
+
+  @@index([visibility, archived_at])
+  @@map("spaces")
+}
+
+model Membership {
+  id        String    @id @default(uuid()) @db.Uuid
+  space_id  String    @db.Uuid
+  user_id   String    @db.Uuid
+  role      SpaceRole
+  joined_at DateTime  @default(now()) @db.Timestamptz(3)
+
+  space Space @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([space_id, user_id])
+  @@index([user_id])
+  @@map("memberships")
+}
+
+// An invitation is either a link (invitee_id null, anyone holding the link can
+// accept once) or addressed to one user (invitee_id set, only they can respond).
+// Expiry is expires_at; "expired" is never stored.
+model Invite {
+  id            String       @id @default(uuid()) @db.Uuid
+  space_id      String       @db.Uuid
+  created_by_id String       @db.Uuid
+  invitee_id    String?      @db.Uuid
+  token_hash    String       @unique @db.VarChar(64)
+  role          SpaceRole
+  status        InviteStatus @default(pending)
+  expires_at    DateTime     @db.Timestamptz(3)
+  created_at    DateTime     @default(now()) @db.Timestamptz(3)
+  responded_at  DateTime?    @db.Timestamptz(3)
+
+  space      Space @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by User  @relation("InviteCreator", fields: [created_by_id], references: [id])
+  invitee    User? @relation("InviteInvitee", fields: [invitee_id], references: [id], onDelete: Cascade)
+
+  @@index([space_id, status])
+  @@index([invitee_id, status])
+  @@map("invites")
 }
