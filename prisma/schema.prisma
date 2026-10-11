@@ -1,0 +1,24 @@
+// Verdale Core schema. Field and column names are snake_case.
+// Prisma Migrate has no automatic down migrations: fix a bad migration with
+// a new forward migration (see docs/database.md).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  // Stored lower-case; uniqueness is case-insensitive by construction.
+  email        String   @unique @db.VarChar(254)
+  username     String   @unique @db.VarChar(32)
+  display_name String   @db.VarChar(64)
+  created_at   DateTime @default(now()) @db.Timestamptz(3)
+  updated_at   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("users")
+}

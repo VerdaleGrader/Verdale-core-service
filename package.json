@@ -1,0 +1,61 @@
+{
+  "name": "verdale-core-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verdale Core service: auth, Spaces, problems, submissions, publish gate.",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "nodemon",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "start": "node build/src/index.js",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run contracts:check",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "prisma:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "contracts:generate": "openapi-typescript contracts/core-public.openapi.yaml -o src/contracts/core-public.gen.ts && openapi-typescript contracts/judge.openapi.yaml -o src/contracts/judge.gen.ts && prettier --write src/contracts",
+    "contracts:check": "node scripts/contracts-check.mjs"
+  },
+  "dependencies": {
+    "@logtail/node": "0.5.12",
+    "@logtail/winston": "0.5.12",
+    "@prisma/adapter-pg": "7.2.0",
+    "@prisma/client": "7.2.0",
+    "dotenv": "17.2.3",
+    "fastify": "5.6.1",
+    "pg": "8.17.2",
+    "winston": "3.19.0",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@types/jest": "30.0.0",
+    "@types/node": "22.19.3",
+    "@types/pg": "8.16.0",
+    "eslint": "9.39.2",
+    "jest": "30.3.0",
+    "nodemon": "3.1.10",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.6.2",
+    "prisma": "7.2.0",
+    "ts-jest": "29.4.6",
+    "ts-node": "10.9.2",
+    "tsc-alias": "1.8.16",
+    "tsconfig-paths": "4.2.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.2"
+  },
+  "overrides": {
+    "light-my-request": "6.6.0"
+  },
+  "//overrides": "light-my-request 6.8 depends on the ESM-only cookie@2, which Jest (CommonJS) cannot load; 6.6 uses cookie@1."
+}

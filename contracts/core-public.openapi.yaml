@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: Verdale Core public API
+  version: 0.1.0
+  description: |
+    Public HTTP API of Core service, consumed by the Frontend.
+    Starting skeleton: endpoints are added story by story (auth in GRD-11,
+    Spaces in M2, problems and submissions in M3).
+
+    Every error uses `ErrorResponse`. Every response carries an
+    `X-Request-Id` header; when the request sends a UUID in `X-Request-Id`,
+    Core reuses it.
+servers:
+  - url: http://localhost:8080
+    description: Local Core
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /ready:
+    get:
+      operationId: getReady
+      summary: Readiness probe (database reachable)
+      responses:
+        '200':
+          description: Ready to serve traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: A dependency is down
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+components:
+  responses:
+    Error:
+      description: Standard error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+    ReadinessResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          additionalProperties:
+            type: boolean
+    ErrorResponse:
+      type: object
+      description: The one error shape used by every Verdale service.
+      required: [status, error_code, message, request_id]
+      properties:
+        status:
+          type: integer
+        error_code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+        message:
+          type: string
