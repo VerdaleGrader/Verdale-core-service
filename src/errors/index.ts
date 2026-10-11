@@ -77,14 +77,21 @@ class NotFoundError extends VError {
 }
 
 class ConflictError extends VError {
-  constructor(message = 'Conflict') {
-    super({ message, status: 409, error_code: 'CONFLICT' });
+  /** `errorCode` lets the web app tell kinds of conflict apart, e.g. VERSION_PUBLISHED. */
+  constructor(message = 'Conflict', errorCode = 'CONFLICT', details?: ErrorDetail[]) {
+    super({ message, status: 409, error_code: errorCode, details });
   }
 }
 
 class GoneError extends VError {
   constructor(message = 'Gone') {
     super({ message, status: 410, error_code: 'GONE' });
+  }
+}
+
+class ServiceUnavailableError extends VError {
+  constructor(message = 'The service is temporarily unavailable. Try again in a moment.') {
+    super({ message, status: 503, error_code: 'UNAVAILABLE' });
   }
 }
 
@@ -103,5 +110,6 @@ export {
   NotFoundError,
   ConflictError,
   GoneError,
+  ServiceUnavailableError,
   InternalServerError,
 };

@@ -5,3 +5,5 @@ generated
 .env
 .env.*
 !.env.example
+# local file storage (STORAGE_DRIVER=local)
+.data

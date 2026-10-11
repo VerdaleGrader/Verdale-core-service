@@ -24,8 +24,11 @@ model User {
   sessions         Session[]
   memberships      Membership[]
   spaces_created   Space[]
-  invites_sent     Invite[]       @relation("InviteCreator")
-  invites_received Invite[]       @relation("InviteInvitee")
+  invites_sent     Invite[]            @relation("InviteCreator")
+  invites_received Invite[]            @relation("InviteInvitee")
+  problems_created Problem[]
+  solutions_added  ReferenceSolution[]
+  submissions      Submission[]
 
   @@map("users")
 }
@@ -98,6 +101,7 @@ model Space {
   created_by  User         @relation(fields: [created_by_id], references: [id])
   memberships Membership[]
   invites     Invite[]
+  problems    Problem[]
 
   @@index([visibility, archived_at])
   @@map("spaces")
@@ -140,4 +144,221 @@ model Invite {
   @@index([space_id, status])
   @@index([invitee_id, status])
   @@map("invites")
+}
+
+// --- Problems (M3: GRD-21) --------------------------------------------------
+
+enum Language {
+  c
+  cpp
+  python
+}
+
+// draft: never published. published: solvers can see and submit.
+// archived: was published, no longer accepts submissions (readable by link).
+enum ProblemStatus {
+  draft
+  published
+  archived
+}
+
+// A published version never changes (enforced in services and by a trigger).
+enum ProblemVersionStatus {
+  draft
+  published
+}
+
+model Problem {
+  id                 String        @id @default(uuid()) @db.Uuid
+  space_id           String        @db.Uuid
+  created_by_id      String        @db.Uuid
+  // Unique inside its Space; part of the URL /spaces/<space>/problems/<slug>.
+  slug               String        @db.VarChar(64)
+  status             ProblemStatus @default(draft)
+  // The version solvers see: the draft while never published, then the
+  // newest published version. A newer draft does not replace it until it is
+  // published. Set in the same transaction that creates the first version.
+  current_version_id String?       @unique @db.Uuid
+  archived_at        DateTime?     @db.Timestamptz(3)
+  created_at         DateTime      @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime      @updatedAt @db.Timestamptz(3)
+
+  space           Space            @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by      User             @relation(fields: [created_by_id], references: [id])
+  current_version ProblemVersion?  @relation("CurrentVersion", fields: [current_version_id], references: [id], onDelete: SetNull)
+  versions        ProblemVersion[] @relation("VersionOfProblem")
+  submissions     Submission[]
+
+  @@unique([space_id, slug])
+  // Problem lists of a Space by status, newest change first.
+  @@index([space_id, status, updated_at(sort: Desc)])
+  @@index([created_by_id, status])
+  @@map("problems")
+}
+
+model ProblemVersion {
+  id                String               @id @default(uuid()) @db.Uuid
+  problem_id        String               @db.Uuid
+  version_number    Int
+  status            ProblemVersionStatus @default(draft)
+  title             String               @db.VarChar(200)
+  // Markdown with KaTeX maths. Drafts may be empty; publishing requires text.
+  statement         String               @default("")
+  time_limit_ms     Int
+  memory_limit_kb   Int
+  allowed_languages Language[]
+  created_at        DateTime             @default(now()) @db.Timestamptz(3)
+  updated_at        DateTime             @updatedAt @db.Timestamptz(3)
+  published_at      DateTime?            @db.Timestamptz(3)
+
+  problem             Problem             @relation("VersionOfProblem", fields: [problem_id], references: [id], onDelete: Cascade)
+  current_of          Problem?            @relation("CurrentVersion")
+  test_cases          TestCase[]
+  reference_solutions ReferenceSolution[]
+  submissions         Submission[]
+
+  @@unique([problem_id, version_number])
+  @@map("problem_versions")
+}
+
+// One test: an input file and an expected output file in the private test
+// bucket, keyed by the SHA-256 of their (normalised) content.
+model TestCase {
+  id                 String   @id @default(uuid()) @db.Uuid
+  problem_version_id String   @db.Uuid
+  // 1-based order; this is the order Judge runs the tests in.
+  position           Int
+  input_sha256       String   @db.VarChar(64)
+  output_sha256      String   @db.VarChar(64)
+  input_size_bytes   Int
+  output_size_bytes  Int
+  // Samples are shown to solvers (content and judging feedback); the rest are hidden.
+  is_sample          Boolean  @default(false)
+  created_at         DateTime @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime @updatedAt @db.Timestamptz(3)
+
+  version ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+
+  @@index([problem_version_id, position])
+  @@map("test_cases")
+}
+
+// The author's solution: proves the problem and its tests are right before
+// publishing. Only owners and editors of the Space can ever read it.
+model ReferenceSolution {
+  id                 String   @id @default(uuid()) @db.Uuid
+  problem_version_id String   @db.Uuid
+  created_by_id      String   @db.Uuid
+  language           Language
+  source             String
+  source_bytes       Int
+  // The one the publish gate runs first. At most one per version.
+  is_primary         Boolean  @default(false)
+  created_at         DateTime @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime @updatedAt @db.Timestamptz(3)
+
+  version    ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  created_by User           @relation(fields: [created_by_id], references: [id])
+
+  @@index([problem_version_id])
+  @@map("reference_solutions")
+}
+
+// --- Submissions (M3: GRD-43) -----------------------------------------------
+
+enum SubmissionStatus {
+  queued
+  running
+  completed
+}
+
+// Overall verdict, as in contracts/judge.openapi.yaml.
+enum Verdict {
+  AC
+  WA
+  TLE
+  MLE
+  RE
+  CE
+  OLE
+  ISE
+}
+
+enum TestVerdict {
+  AC
+  WA
+  TLE
+  MLE
+  RE
+  OLE
+  ISE
+  SKIPPED
+}
+
+model Submission {
+  id                 String           @id @default(uuid()) @db.Uuid
+  user_id            String           @db.Uuid
+  problem_id         String           @db.Uuid
+  // The exact version that was submitted to: results never change when the
+  // problem is edited later.
+  problem_version_id String           @db.Uuid
+  language           Language
+  source             String
+  source_bytes       Int
+  status             SubmissionStatus @default(queued)
+  // Set exactly when status = completed.
+  verdict            Verdict?
+  // Maximum over the tests that ran.
+  time_ms            Int?
+  memory_kb          Int?
+  tests_passed       Int?
+  tests_total        Int?
+  compile_message    String?          @db.VarChar(8192)
+  // Judge's system error code (ISE) or Core's (JUDGE_UNAVAILABLE).
+  error_code         String?          @db.VarChar(64)
+  judge_version      String?          @db.VarChar(64)
+  // The current Judge job. A re-judge gets a new id; results for old ids are refused.
+  judge_job_id       String?          @unique @db.Uuid
+  dispatch_attempts  Int              @default(0)
+  // While queued and not yet accepted by Judge: when to try handing it over again.
+  next_dispatch_at   DateTime?        @db.Timestamptz(3)
+  dispatched_at      DateTime?        @db.Timestamptz(3)
+  judged_at          DateTime?        @db.Timestamptz(3)
+  created_at         DateTime         @default(now()) @db.Timestamptz(3)
+  updated_at         DateTime         @updatedAt @db.Timestamptz(3)
+
+  user    User                   @relation(fields: [user_id], references: [id])
+  problem Problem                @relation(fields: [problem_id], references: [id])
+  version ProblemVersion         @relation(fields: [problem_version_id], references: [id])
+  results SubmissionTestResult[]
+
+  // "My submissions of this problem", "everyone's submissions of this problem", newest first.
+  @@index([user_id, problem_id, created_at(sort: Desc)])
+  @@index([problem_id, created_at(sort: Desc)])
+  // The dispatcher looks for queued submissions that are due.
+  @@index([status, next_dispatch_at])
+  @@map("submissions")
+}
+
+// One row per test that Judge reported. Never holds the content of a hidden
+// test: previews are kept for sample tests only.
+model SubmissionTestResult {
+  id              String      @id @default(uuid()) @db.Uuid
+  submission_id   String      @db.Uuid
+  position        Int
+  test_case_id    String?     @db.Uuid
+  // Copied from our own test case when the result arrives (never trusted from Judge).
+  is_sample       Boolean
+  verdict         TestVerdict
+  time_ms         Int
+  memory_kb       Int
+  exit_code       Int?
+  signal          Int?
+  stdout_preview  String?     @db.VarChar(1024)
+  checker_message String?     @db.VarChar(256)
+
+  submission Submission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+
+  @@unique([submission_id, position])
+  @@map("submission_test_results")
 }

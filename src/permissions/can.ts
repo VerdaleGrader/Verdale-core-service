@@ -15,6 +15,7 @@ export const ACTIONS = [
   'space.manage_members',
   'space.leave',
   'problem.view',
+  'problem.view_private',
   'problem.create',
   'problem.update',
   'problem.publish',
@@ -56,9 +57,11 @@ const ANY_MEMBER: readonly SpaceRoleName[] = ['owner', 'editor', 'solver'];
  * created, edited, published or submitted, and settings/members are frozen.
  * Members may still leave.
  *
+ * problem.view_private: the parts of a problem solvers must never see (hidden
+ * tests, reference solutions, the editor view). Owners and editors only.
+ *
  * submission.view: your own submissions, wherever you may submit; other
- * people's submissions only for owners and editors. Provisional until
- * GRD-46 decides who sees whose submissions.
+ * people's submissions only for owners and editors (decided in GRD-46).
  */
 export function can(actor: Actor, action: Action, resource: Resource): boolean {
   const { visibility, archived, role } = resource.space;
@@ -80,6 +83,10 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
     case 'problem.view':
       if (!canSee) return false;
       return resource.problemStatus === 'draft' ? isWriter : true;
+    case 'problem.view_private':
+      // Hidden tests, reference solutions, drafts: authors only. Reading stays
+      // allowed in an archived Space (it is read-only, not secret).
+      return canSee && isWriter;
     case 'problem.create':
     case 'problem.update':
     case 'problem.publish':
