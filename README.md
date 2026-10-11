@@ -17,6 +17,16 @@ npm run db:seed               # sample users
 npm run dev                   # http://localhost:8080/health, /ready
 ```
 
+### Or with Docker Compose (local Postgres, no Neon)
+
+```bash
+docker compose up --build     # Postgres 17 -> migrations -> Core on http://localhost:8080
+docker compose run --rm seed  # sample users
+docker compose down -v        # stop and wipe the local database
+```
+
+Does not read `.env`. Override host ports with `CORE_PORT` (default 8080) and `POSTGRES_PORT` (default 5433) if they are taken, e.g. by `npm run dev`.
+
 ## Commands
 
 | Command                          | What                                                                       |
