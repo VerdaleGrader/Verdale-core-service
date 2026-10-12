@@ -16,6 +16,7 @@ import TLogger, { Layer } from '@/logging/logger';
 import { Db, isCheckViolation, isUniqueViolation } from '@/repositories/db';
 import ProblemRepository, { ProblemWithVersion } from '@/repositories/problem.repository';
 import SolutionRepository from '@/repositories/solution.repository';
+import TrackRepository from '@/repositories/track.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
 import {
   assertDraftEditable,
@@ -28,6 +29,7 @@ import {
   ProblemConstraintsDto,
   ProblemStatusName,
   ProblemSummaryDto,
+  StatementModeName,
   ProblemVersionDto,
   TestSummaryDto,
   constraints,
@@ -36,7 +38,8 @@ import {
   toVersionDto,
 } from '@/services/problem/problem.mapper';
 import { PublishCheck, buildPublishChecks } from '@/services/problem/publish-checks';
-import { SpaceAccess, assertCan } from '@/services/space/space.access';
+import { SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/space/space.access';
+import { can } from '@/permissions/can';
 import SpaceService from '@/services/space/space.service';
 import { Page } from '@/services/space/space.mapper';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
@@ -53,6 +56,7 @@ export interface CreateProblemInput {
 export interface UpdateProblemInput {
   title?: string;
   statement?: string;
+  statement_mode?: 'markdown' | 'pdf';
   time_limit_ms?: number;
   memory_limit_kb?: number;
   allowed_languages?: string[];
@@ -73,6 +77,9 @@ export interface ProblemDto {
   space: { name: string; slug: string };
   title: string;
   statement: string;
+  /** Which of `statement` (Markdown) and `statement_pdf` the page shows; samples always come with it. */
+  statement_mode: StatementModeName;
+  statement_pdf: { url: string; pages: number; size_bytes: number } | null;
   version_number: number;
   time_limit_ms: number;
   memory_limit_kb: number;
@@ -110,18 +117,50 @@ export default class ProblemService {
     private readonly solutions: SolutionRepository,
     private readonly spaceService: SpaceService,
     private readonly testStorage: FileStorage,
+    private readonly tracks: TrackRepository,
     private readonly now: () => Date = () => new Date()
   ) {}
 
   // --- shared lookups -----------------------------------------------------
 
-  /** The Space (404 when the caller may not see it) and the problem (404 when missing). */
+  /**
+   * The Space (404 when the caller may not see it) and the problem (404 when
+   * missing). `inTrack` says whether the problem sits in a Collection of a
+   * Track the caller can see; owners and editors do not need one (GRD-81).
+   */
   async loadForReader(db: Db, user: User | null, slug: string, problemSlug: string) {
     const access = await this.spaceService.load(db, slug, user);
     assertCan(user, 'space.view', access);
     const problem = await this.problems.findBySlug(db, access.space.id, problemSlug.toLowerCase());
     if (!problem) throw new NotFoundError('Problem not found.');
-    return { access, problem };
+    const inTrack =
+      isAuthor(user, access) ||
+      (await this.tracks.isProblemInVisibleTrack(db, access.space.id, problem.id, {
+        userId: user?.id ?? null,
+      }));
+    return { access, problem, inTrack };
+  }
+
+  /**
+   * The reading rule for one problem, answered with 404 so that a hidden
+   * problem looks the same as a missing one: drafts are for owners and
+   * editors, and anyone else needs the problem to be in a Track they can see.
+   */
+  assertReadable(
+    user: User | null,
+    access: SpaceAccess,
+    problem: Pick<ProblemWithVersion, 'status'>,
+    inTrack: boolean
+  ): void {
+    const allowed = can(
+      actorOf(user),
+      'problem.view',
+      resourceOf(access, {
+        problemStatus: problem.status === 'draft' ? 'draft' : 'published',
+        problemInTrack: inTrack,
+      })
+    );
+    if (!allowed) throw new NotFoundError('Problem not found.');
   }
 
   /** For authors: the permission is checked first, then the problem is looked up. */
@@ -170,6 +209,8 @@ export default class ProblemService {
       access.space.archived_at === null;
     const checks = buildPublishChecks({
       statement: version.statement,
+      statementMode: version.statement_mode,
+      hasPdf: version.statement_pdf_sha256 !== null,
       languageCount: version.allowed_languages.length,
       testCount: testStats.count,
       sampleCount: testStats.sample_count,
@@ -214,6 +255,10 @@ export default class ProblemService {
       q: input.q,
       statuses,
       createdById: author && input.mine && user ? user.id : undefined,
+      // Solvers, outsiders and visitors only see problems that are in a Track they can see.
+      and: author
+        ? undefined
+        : this.tracks.problemInVisibleTrackWhere({ userId: user?.id ?? null }),
       skip: (input.page - 1) * input.page_size,
       take: input.page_size,
     });
@@ -227,11 +272,15 @@ export default class ProblemService {
 
   /** What a solver sees: the statement, limits, languages and the sample tests, nothing else. */
   async get(user: User | null, slug: string, problemSlug: string): Promise<ProblemDto> {
-    const { access, problem } = await this.loadForReader(this.prisma, user, slug, problemSlug);
-    // A draft is invisible to everyone but owners and editors, who see a preview of it.
-    if (problem.status === 'draft' && !isAuthor(user, access)) {
-      throw new NotFoundError('Problem not found.');
-    }
+    const { access, problem, inTrack } = await this.loadForReader(
+      this.prisma,
+      user,
+      slug,
+      problemSlug
+    );
+    // A draft is invisible to everyone but owners and editors, who see a preview of it; so is
+    // a problem outside every Track the caller can see (GRD-81).
+    this.assertReadable(user, access, problem, inTrack);
     const version = currentVersionOf(problem);
     const samples = await this.readSamples(version.id);
     return {
@@ -241,6 +290,15 @@ export default class ProblemService {
       space: { name: access.space.name, slug: access.space.slug },
       title: version.title,
       statement: version.statement,
+      statement_mode: version.statement_mode,
+      statement_pdf:
+        version.statement_mode === 'pdf' && version.statement_pdf_pages !== null
+          ? {
+              url: `/api/v1/spaces/${access.space.slug}/problems/${problem.slug}/statement/pdf`,
+              pages: version.statement_pdf_pages,
+              size_bytes: version.statement_pdf_size_bytes ?? 0,
+            }
+          : null,
       version_number: version.version_number,
       time_limit_ms: version.time_limit_ms,
       memory_limit_kb: version.memory_limit_kb,
@@ -364,6 +422,11 @@ export default class ProblemService {
         const fresh = (await this.problems.findById(tx, found.id))!;
         const draft = await this.problems.findDraftVersion(tx, fresh.id);
         assertDraftEditable(fresh, draft);
+        if (input.statement_mode === 'pdf' && draft!.statement_pdf_sha256 === null) {
+          throw new ValidationError([
+            { field: 'statement_mode', message: 'Upload a PDF before choosing the PDF mode.' },
+          ]);
+        }
         await this.problems.updateVersion(tx, draft!.id, {
           ...input,
           allowed_languages: input.allowed_languages as Language[] | undefined,
@@ -442,6 +505,8 @@ export default class ProblemService {
       ]);
       const checks = buildPublishChecks({
         statement: draft!.statement,
+        statementMode: draft!.statement_mode,
+        hasPdf: draft!.statement_pdf_sha256 !== null,
         languageCount: draft!.allowed_languages.length,
         testCount: testStats.count,
         sampleCount: testStats.sample_count,

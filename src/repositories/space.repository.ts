@@ -85,7 +85,7 @@ export default class SpaceRepository {
   listMembers(db: Db, spaceId: string) {
     return db.membership.findMany({
       where: { space_id: spaceId },
-      include: { user: { select: { username: true, display_name: true } } },
+      include: { user: { select: { username: true, display_name: true, avatar_url: true } } },
       orderBy: [{ joined_at: 'asc' }, { id: 'asc' }],
     });
   }

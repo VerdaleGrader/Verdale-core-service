@@ -6,6 +6,9 @@ export interface PublishCheck {
 
 export interface PublishFacts {
   statement: string;
+  /** In PDF mode the uploaded file is the statement and the text may stay empty. */
+  statementMode?: 'markdown' | 'pdf';
+  hasPdf?: boolean;
   languageCount: number;
   testCount: number;
   sampleCount: number;
@@ -18,12 +21,19 @@ export interface PublishFacts {
  * front of this; these cheap checks stay as the first gate.
  */
 export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
+  const pdf = facts.statementMode === 'pdf';
+  const statementOk = pdf ? facts.hasPdf === true : facts.statement.trim().length > 0;
   return [
     {
       key: 'statement',
-      ok: facts.statement.trim().length > 0,
-      message:
-        facts.statement.trim().length > 0 ? 'The statement is written.' : 'Write the statement.',
+      ok: statementOk,
+      message: statementOk
+        ? pdf
+          ? 'The PDF statement is uploaded.'
+          : 'The statement is written.'
+        : pdf
+          ? 'Upload the PDF statement.'
+          : 'Write the statement.',
     },
     {
       key: 'languages',

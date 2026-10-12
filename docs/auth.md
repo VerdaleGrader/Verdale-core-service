@@ -61,19 +61,23 @@ One namespace: lower-case, 3 to 32 characters, `[a-z0-9_-]`, starting with a let
 
 `can(actor, action, resource)` is the only place that decides access. Callers load the facts (role, visibility, archived) and pass them in. Every cell of this table has a unit test (`src/permissions/can.test.ts`).
 
-| Action                                  | Visitor (not logged in) | Logged-in, not a member |  Solver   |    Editor    |    Owner     |
-| --------------------------------------- | :---------------------: | :---------------------: | :-------: | :----------: | :----------: |
-| space.view                              |       public only       |       public only       |    yes    |     yes      |     yes      |
-| space.view_members                      |           no            |           no            |    yes    |     yes      |     yes      |
-| space.update / archive / manage_members |           no            |           no            |    no     |      no      |    yes ¹     |
-| space.leave                             |           no            |           no            |    yes    |     yes      |    yes ²     |
-| problem.view                            | published, public only  | published, public only  | published |     all      |     all      |
-| problem.view_private ⁴                  |           no            |           no            |    no     |     yes      |     yes      |
-| problem.create / update / publish       |           no            |           no            |    no     |    yes ¹     |    yes ¹     |
-| submission.create                       |     **no (log in)**     |   public Spaces only    |   yes ¹   |    yes ¹     |    yes ¹     |
-| submission.view                         |           no            |   own, public Spaces    |    own    | everyone's ³ | everyone's ³ |
+| Action                                  | Visitor (not logged in)  | Logged-in, not a member  |    Solver     |    Editor    |    Owner     |
+| --------------------------------------- | :----------------------: | :----------------------: | :-----------: | :----------: | :----------: |
+| space.view                              |       public only        |       public only        |      yes      |     yes      |     yes      |
+| space.view_members                      |            no            |            no            |      yes      |     yes      |     yes      |
+| space.update / archive / manage_members |            no            |            no            |      no       |      no      |    yes ¹     |
+| space.leave                             |            no            |            no            |      yes      |     yes      |    yes ²     |
+| problem.view ⁵                          |  published, public only  |  published, public only  |   published   |     all      |     all      |
+| problem.view_private ⁴                  |            no            |            no            |      no       |     yes      |     yes      |
+| problem.create / update / publish       |            no            |            no            |      no       |    yes ¹     |    yes ¹     |
+| submission.create ⁵                     |     **no (log in)**      |    public Spaces only    |     yes ¹     |    yes ¹     |    yes ¹     |
+| submission.view                         |            no            |    own, public Spaces    |      own      | everyone's ³ | everyone's ³ |
+| track.view ⁶                            | open Tracks, public only | open Tracks, public only | open + joined |     all      |     all      |
+| track.manage / manage_members           |            no            |            no            |      no       |    yes ¹     |    yes ¹     |
 
 ¹ Not in an archived Space: an archived Space is read-only (problems stay visible; nothing created, edited, published or submitted; settings and members frozen). ² Except the last owner. ³ Decided in GRD-46: owners and editors see everyone's submissions in their Space, everyone else only their own. ⁴ Hidden tests, reference solutions and the editor view; readable by owners and editors in an archived Space too.
+
+⁵ Since GRD-81 a solver, an outsider of a public Space and a visitor reach a problem only through a Collection of a Track they can see (`problemInTrack`); owners and editors do not need one. Details and the exact 404 rules: [tracks.md](tracks.md). ⁶ A Track is visible when it is not archived and either open to the Space or the person was added to it; owners and editors see every Track, archived ones too.
 
 Public Space: a logged-in user can view and submit code. Private Space: members only. **Visitors can view public Spaces and published problems but must log in to submit** (decision 2026-10-11).
 

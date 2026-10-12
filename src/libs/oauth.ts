@@ -12,6 +12,19 @@ export interface OAuthProfile {
   displayName: string;
   /** Suggested username (GitHub login, Google name or e-mail prefix). */
   usernameHint: string;
+  /** The provider's profile picture, if it has one (GRD-68). */
+  avatarUrl?: string;
+}
+
+/** Only an https URL of reasonable length is kept; anything else means "no picture". */
+export function safeAvatarUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface OAuthProvider {
@@ -121,6 +134,7 @@ export class GitHubProvider implements OAuthProvider {
       emailVerified: Boolean(primary),
       displayName: text(user.name) || login,
       usernameHint: login,
+      avatarUrl: safeAvatarUrl(user.avatar_url) ?? undefined,
     };
   }
 }
@@ -185,6 +199,7 @@ export class GoogleProvider implements OAuthProvider {
       emailVerified: info.email_verified === true,
       displayName: text(info.name) || email.split('@')[0] || '',
       usernameHint: email.split('@')[0] || text(info.given_name),
+      avatarUrl: safeAvatarUrl(info.picture) ?? undefined,
     };
   }
 }

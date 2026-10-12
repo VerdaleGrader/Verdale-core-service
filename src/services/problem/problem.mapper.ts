@@ -4,6 +4,8 @@ import {
   IMAGE_MAX_BYTES,
   LANGUAGES,
   MEMORY_LIMIT_KB,
+  PDF_MAX_BYTES,
+  PDF_MAX_PAGES,
   SOLUTIONS_MAX_COUNT,
   SOURCE_MAX_BYTES,
   STATEMENT_MAX_LENGTH,
@@ -28,6 +30,7 @@ export interface ProblemConstraintsDto {
   images: { max_bytes: number; content_types: string[] };
   solutions: { max_count: number };
   source_max_bytes: number;
+  pdf: { max_bytes: number; max_pages: number };
 }
 
 export type TestLimitsDto = {
@@ -53,6 +56,7 @@ export function constraints(): ProblemConstraintsDto {
     images: { max_bytes: IMAGE_MAX_BYTES, content_types: [...IMAGE_CONTENT_TYPES] },
     solutions: { max_count: SOLUTIONS_MAX_COUNT },
     source_max_bytes: SOURCE_MAX_BYTES,
+    pdf: { max_bytes: PDF_MAX_BYTES, max_pages: PDF_MAX_PAGES },
   };
 }
 
@@ -97,12 +101,38 @@ export function toProblemSummary(problem: ProblemWithVersion): ProblemSummaryDto
   };
 }
 
+export type StatementModeName = 'markdown' | 'pdf';
+
+/** The uploaded PDF of a version, kept even while the Markdown mode is selected. */
+export interface PdfStatementDto {
+  sha256: string;
+  size_bytes: number;
+  pages: number;
+}
+
+export function toPdfStatement(version: ProblemVersion): PdfStatementDto | null {
+  if (
+    !version.statement_pdf_sha256 ||
+    version.statement_pdf_size_bytes === null ||
+    version.statement_pdf_pages === null
+  ) {
+    return null;
+  }
+  return {
+    sha256: version.statement_pdf_sha256,
+    size_bytes: version.statement_pdf_size_bytes,
+    pages: version.statement_pdf_pages,
+  };
+}
+
 export interface ProblemVersionDto {
   id: string;
   number: number;
   status: 'draft' | 'published';
   title: string;
   statement: string;
+  statement_mode: StatementModeName;
+  statement_pdf: PdfStatementDto | null;
   time_limit_ms: number;
   memory_limit_kb: number;
   allowed_languages: Language[];
@@ -118,6 +148,8 @@ export function toVersionDto(version: ProblemVersion): ProblemVersionDto {
     status: version.status,
     title: version.title,
     statement: version.statement,
+    statement_mode: version.statement_mode,
+    statement_pdf: toPdfStatement(version),
     time_limit_ms: version.time_limit_ms,
     memory_limit_kb: version.memory_limit_kb,
     allowed_languages: version.allowed_languages,

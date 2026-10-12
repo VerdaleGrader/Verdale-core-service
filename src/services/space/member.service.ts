@@ -3,6 +3,7 @@ import { ConflictError, NotFoundError } from '@/errors';
 import TLogger, { Layer } from '@/logging/logger';
 import { Db, isCheckViolation } from '@/repositories/db';
 import SpaceRepository from '@/repositories/space.repository';
+import TrackRepository from '@/repositories/track.repository';
 import UserRepository from '@/repositories/user.repository';
 import { Role, SpaceAccess, assertCan } from '@/services/space/space.access';
 import SpaceService from '@/services/space/space.service';
@@ -27,7 +28,8 @@ export default class MemberService {
     private readonly prisma: PrismaClient,
     private readonly spaces: SpaceRepository,
     private readonly users: UserRepository,
-    private readonly spaceService: SpaceService
+    private readonly spaceService: SpaceService,
+    private readonly tracks: TrackRepository
   ) {}
 
   async list(user: User, slug: string): Promise<MemberDto[]> {
@@ -59,9 +61,11 @@ export default class MemberService {
       message: 'member role changed',
       data: { spaceId: changed.space_id, targetUserId: changed.user_id, role },
     });
+    const target = await this.users.findById(this.prisma, changed.user_id);
     return {
       username: username.toLowerCase(),
-      display_name: (await this.users.findById(this.prisma, changed.user_id))?.display_name ?? '',
+      display_name: target?.display_name ?? '',
+      avatar_url: target?.avatar_url ?? null,
       role: changed.role as Role,
       joined_at: changed.joined_at.toISOString(),
     };
@@ -71,6 +75,7 @@ export default class MemberService {
     const logger = this.logger.setContext('service.member.remove', requestId);
     const removed = await this.mutate(slug, user, username, async (tx, access, target) => {
       if (target.role === 'owner') await this.assertAnotherOwner(tx, access.space.id);
+      await this.tracks.removeUserFromSpaceTracks(tx, access.space.id, target.user_id);
       return this.spaces.removeMember(tx, access.space.id, target.user_id);
     });
     logger.info({
@@ -87,6 +92,7 @@ export default class MemberService {
         const access = await this.lockedAccess(tx, slug, user);
         assertCan(user, 'space.leave', access);
         if (access.role === 'owner') await this.assertAnotherOwner(tx, access.space.id);
+        await this.tracks.removeUserFromSpaceTracks(tx, access.space.id, user.id);
         await this.spaces.removeMember(tx, access.space.id, user.id);
       })
     );

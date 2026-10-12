@@ -8,12 +8,14 @@ import {
   OAuthProviderName,
   OAuthProviders,
   createPkcePair,
+  safeAvatarUrl,
 } from '@/libs/oauth';
 import { generateToken, hashToken } from '@/libs/tokens';
 import TLogger, { Layer } from '@/logging/logger';
 import { Db, isUniqueViolation } from '@/repositories/db';
 import SessionRepository from '@/repositories/session.repository';
 import SpaceRepository from '@/repositories/space.repository';
+import TrackRepository from '@/repositories/track.repository';
 import UserRepository from '@/repositories/user.repository';
 import { toSessionUser, SessionUser } from '@/services/user/user.mapper';
 
@@ -70,6 +72,7 @@ export default class AuthService {
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
     private readonly spaces: SpaceRepository,
+    private readonly tracks: TrackRepository,
     private readonly providers: OAuthProviders,
     private readonly config: AuthConfigurations,
     private readonly now: () => Date = () => new Date()
@@ -180,14 +183,15 @@ export default class AuthService {
   // --- internals ----------------------------------------------------------
 
   private async resolveUser(tx: Db, provider: OAuthProviderName, profile: OAuthProfile) {
+    const avatarUrl = safeAvatarUrl(profile.avatarUrl);
     const linked = await this.users.findByOAuthAccount(tx, provider, profile.providerAccountId);
-    if (linked) return { user: linked, isNewUser: false };
+    if (linked) return { user: await this.refreshAvatar(tx, linked, avatarUrl), isNewUser: false };
 
     // Same verified e-mail seen through another provider: same person.
     const sameEmail = await this.users.findByEmail(tx, profile.email);
     if (sameEmail) {
       await this.users.linkOAuthAccount(tx, sameEmail.id, provider, profile.providerAccountId);
-      return { user: sameEmail, isNewUser: false };
+      return { user: await this.refreshAvatar(tx, sameEmail, avatarUrl), isNewUser: false };
     }
 
     const username = await this.freeUsername(tx, profile.usernameHint);
@@ -196,6 +200,7 @@ export default class AuthService {
       email: profile.email,
       username,
       display_name: displayName,
+      avatar_url: avatarUrl,
     });
     await this.users.linkOAuthAccount(tx, user.id, provider, profile.providerAccountId);
 
@@ -209,7 +214,22 @@ export default class AuthService {
       is_personal: true,
     });
     await this.spaces.addMember(tx, space.id, user.id, 'owner');
+    await this.tracks.createStarterTrack(tx, space.id);
     return { user, isNewUser: true };
+  }
+
+  /**
+   * The picture is refreshed at every login (GRD-68). A provider that sends
+   * none leaves the stored one alone, so a missing picture in one login
+   * does not erase a good one from another provider.
+   */
+  private async refreshAvatar<T extends { id: string; avatar_url: string | null }>(
+    tx: Db,
+    user: T,
+    avatarUrl: string | null
+  ): Promise<T> {
+    if (avatarUrl === null || avatarUrl === user.avatar_url) return user;
+    return (await this.users.update(tx, user.id, { avatar_url: avatarUrl })) as unknown as T;
   }
 
   private async freeUsername(tx: Db, hint: string): Promise<string> {

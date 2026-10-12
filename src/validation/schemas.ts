@@ -7,6 +7,8 @@ import {
   SUBMISSION_LIST_MAX_PAGE_SIZE,
   TIME_LIMIT_MS,
   TITLE_MAX_LENGTH,
+  TRACK_INVITE_MAX_DAYS,
+  TRACK_LIMITS,
 } from '@/constants/limits';
 
 export const pagination = {
@@ -28,6 +30,10 @@ const queryBoolean = z
 export const listQuery = z.object({ ...pagination, archived: queryBoolean });
 export const publicListQuery = z.object(pagination);
 
+/** Names people see: no control characters, so no line breaks or NULs inside a name. */
+const hasNoControlCharacters = (value: string) => !/[\p{Cc}\u2028\u2029]/u.test(value);
+const CONTROL_MESSAGE = 'Remove line breaks and other control characters.';
+
 const spaceName = z.string().trim().min(1).max(80);
 const spaceDescription = z.string().trim().max(500);
 const visibility = z.enum(['public', 'private']);
@@ -37,6 +43,14 @@ export const createSpaceBody = z.object({
   slug: z.string().trim().min(1).max(64),
   description: spaceDescription.default(''),
   visibility: visibility.default('private'),
+  /** The name of the Track every new Space starts with; "General" when left out. */
+  track_name: z
+    .string()
+    .trim()
+    .min(1, 'Enter a name.')
+    .max(80, 'Use at most 80 characters.')
+    .refine(hasNoControlCharacters, CONTROL_MESSAGE)
+    .optional(),
 });
 
 export const updateSpaceBody = z
@@ -51,7 +65,13 @@ export const updateSpaceBody = z
 
 export const updateMeBody = z
   .object({
-    display_name: z.string().trim().min(1).max(64).optional(),
+    display_name: z
+      .string()
+      .trim()
+      .min(1, 'Enter a name.')
+      .max(64, 'Use at most 64 characters.')
+      .refine(hasNoControlCharacters, CONTROL_MESSAGE)
+      .optional(),
     username: z.string().trim().min(1).max(64).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
@@ -129,6 +149,7 @@ export const updateProblemBody = z
   .object({
     title: problemTitle.optional(),
     statement: problemStatement.optional(),
+    statement_mode: z.enum(['markdown', 'pdf']).optional(),
     time_limit_ms: timeLimit.optional(),
     memory_limit_kb: memoryLimit.optional(),
     allowed_languages: allowedLanguages.optional(),
@@ -187,4 +208,92 @@ export const submissionListQuery = z.object({
 
 export const assetParams = z.object({
   name: z.string().regex(/^[a-f0-9]{32}\.(png|jpg|webp)$/),
+});
+
+// --- Tracks, Collections, Track members (M3: GRD-78 to GRD-82) --------------
+
+const groupName = z
+  .string()
+  .trim()
+  .min(1, 'Enter a name.')
+  .max(80, 'Use at most 80 characters.')
+  .refine(hasNoControlCharacters, CONTROL_MESSAGE);
+const groupDescription = z
+  .string()
+  .trim()
+  .max(500, 'Use at most 500 characters.')
+  .refine(withoutNul, NUL_MESSAGE);
+const groupSlug = z.string().trim().min(1).max(64);
+const atLeastOneField = (body: object) => Object.keys(body).length > 0;
+const AT_LEAST_ONE = { message: 'Send at least one field to change.' };
+const requestList = <T extends z.ZodType>(item: T) =>
+  z.array(item).min(1, 'Name at least one.').max(TRACK_LIMITS.max_items_per_request);
+
+export const trackParams = slugParams.extend({ trackSlug: z.string().min(1).max(64) });
+export const trackMemberParams = trackParams.extend({ username: z.string().min(1).max(64) });
+export const trackInviteParams = trackParams.extend({ inviteId: z.uuid() });
+export const collectionParams = slugParams.extend({ collectionSlug: z.string().min(1).max(64) });
+
+const trackVisibility = z.enum(['space', 'members']);
+
+export const createTrackBody = z.object({
+  name: groupName,
+  slug: groupSlug,
+  description: groupDescription.default(''),
+  visibility: trackVisibility.default('space'),
+});
+
+export const updateTrackBody = z
+  .object({
+    name: groupName.optional(),
+    slug: groupSlug.optional(),
+    description: groupDescription.optional(),
+    visibility: trackVisibility.optional(),
+  })
+  .refine(atLeastOneField, AT_LEAST_ONE);
+
+export const reorderTracksBody = z.object({
+  track_ids: z.array(z.uuid()).max(TRACK_LIMITS.max_tracks_per_space),
+});
+
+export const createCollectionBody = z.object({
+  name: groupName,
+  slug: groupSlug,
+  description: groupDescription.default(''),
+  track_slugs: z.array(groupSlug).max(TRACK_LIMITS.max_tracks_per_space).default([]),
+});
+
+export const updateCollectionBody = z
+  .object({
+    name: groupName.optional(),
+    slug: groupSlug.optional(),
+    description: groupDescription.optional(),
+  })
+  .refine(atLeastOneField, AT_LEAST_ONE);
+
+export const problemSlugsBody = z.object({
+  problem_slugs: requestList(z.string().trim().min(1).max(64)),
+});
+export const collectionSlugsBody = z.object({
+  collection_slugs: requestList(z.string().trim().min(1).max(64)),
+});
+export const reorderProblemsBody = z.object({
+  problem_ids: z.array(z.uuid()).max(TRACK_LIMITS.max_problems_per_collection),
+});
+export const reorderCollectionsBody = z.object({
+  collection_ids: z.array(z.uuid()).max(TRACK_LIMITS.max_collections_per_space),
+});
+
+export const createTrackInviteBody = z.object({
+  username: z.string().trim().min(1).max(64).optional(),
+  expires_in_days: z.number().int().min(1).max(TRACK_INVITE_MAX_DAYS).default(7),
+});
+
+export const progressQuery = z.object({ username: z.string().trim().min(1).max(64).optional() });
+
+export const statementPdfQuery = z.object({
+  draft: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
