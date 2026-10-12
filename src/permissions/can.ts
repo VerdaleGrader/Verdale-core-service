@@ -21,6 +21,9 @@ export const ACTIONS = [
   'problem.publish',
   'submission.create',
   'submission.view',
+  'track.view',
+  'track.manage',
+  'track.manage_members',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -38,8 +41,22 @@ export interface Resource {
   space: SpaceFacts;
   /** For problem.view: drafts are visible to owners and editors only. */
   problemStatus?: 'draft' | 'published';
+  /**
+   * For problem.view and submission.create (GRD-81): the problem sits in a
+   * Collection of a Track this actor may see. Owners and editors do not need it.
+   */
+  problemInTrack?: boolean;
+  /** For track.view. */
+  track?: TrackFacts;
   /** For submission.view: whose submission is being read. */
   submissionAuthorId?: string;
+}
+
+export interface TrackFacts {
+  visibility: 'space' | 'members';
+  archived: boolean;
+  /** The actor was added to this Track (invitation or removal by an owner/editor). */
+  isMember: boolean;
 }
 
 const WRITERS: readonly SpaceRoleName[] = ['owner', 'editor'];
@@ -62,6 +79,14 @@ const ANY_MEMBER: readonly SpaceRoleName[] = ['owner', 'editor', 'solver'];
  *
  * submission.view: your own submissions, wherever you may submit; other
  * people's submissions only for owners and editors (decided in GRD-46).
+ *
+ * Tracks (GRD-77 to GRD-81): solvers, outsiders and visitors reach problems
+ * only through a Track they can see, so problem.view and submission.create
+ * also need `problemInTrack`. A Track is visible to everyone who can see its
+ * Space when its visibility is `space`, otherwise only to people added to it;
+ * owners and editors see every Track, archived or not. An archived Track is
+ * hidden from everyone else. Managing Tracks, Collections and their members
+ * is for owners and editors, and stops with an archived Space.
  */
 export function can(actor: Actor, action: Action, resource: Resource): boolean {
   const { visibility, archived, role } = resource.space;
@@ -82,7 +107,8 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
       return role !== null && ANY_MEMBER.includes(role);
     case 'problem.view':
       if (!canSee) return false;
-      return resource.problemStatus === 'draft' ? isWriter : true;
+      if (isWriter) return true;
+      return resource.problemStatus !== 'draft' && resource.problemInTrack === true;
     case 'problem.view_private':
       // Hidden tests, reference solutions, drafts: authors only. Reading stays
       // allowed in an archived Space (it is read-only, not secret).
@@ -94,7 +120,19 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
     case 'submission.create':
       // Logged in, may see the Space, and the Space is not archived. Solving
       // a private Space needs membership; a public one needs only an account.
-      return actor !== null && !archived && canSee;
+      return (
+        actor !== null && !archived && canSee && (isWriter || resource.problemInTrack === true)
+      );
+    case 'track.view': {
+      if (!canSee) return false;
+      const track = resource.track;
+      if (isWriter) return true;
+      if (!track || track.archived) return false;
+      return track.visibility === 'space' || track.isMember;
+    }
+    case 'track.manage':
+    case 'track.manage_members':
+      return !archived && isWriter;
     case 'submission.view': {
       if (actor === null || !canSee) return false;
       if (resource.submissionAuthorId === actor.userId) return true;

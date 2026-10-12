@@ -6,6 +6,8 @@ export interface SessionUser {
   email: string;
   username: string;
   display_name: string;
+  /** The provider's picture, or null (the web app shows initials). */
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -13,6 +15,7 @@ export interface SessionUser {
 export interface PublicUser {
   username: string;
   display_name: string;
+  avatar_url: string | null;
 }
 
 export function toSessionUser(user: User): SessionUser {
@@ -21,10 +24,19 @@ export function toSessionUser(user: User): SessionUser {
     email: user.email,
     username: user.username,
     display_name: user.display_name,
+    avatar_url: user.avatar_url,
     created_at: user.created_at.toISOString(),
   };
 }
 
-export function toPublicUser(user: { username: string; display_name: string }): PublicUser {
-  return { username: user.username, display_name: user.display_name };
+export function toPublicUser(user: {
+  username: string;
+  display_name: string;
+  avatar_url?: string | null;
+}): PublicUser {
+  return {
+    username: user.username,
+    display_name: user.display_name,
+    avatar_url: user.avatar_url ?? null,
+  };
 }

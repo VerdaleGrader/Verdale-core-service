@@ -2,7 +2,7 @@ import { Language, SubmissionStatus, TestVerdict, Verdict } from '../../generate
 import { Db, Prisma } from '@/repositories/db';
 
 const FOR_DISPLAY = {
-  user: { select: { username: true, display_name: true } },
+  user: { select: { username: true, display_name: true, avatar_url: true } },
   problem: { select: { slug: true, space_id: true, status: true } },
   version: { select: { title: true } },
 } as const;
@@ -81,6 +81,50 @@ export default class SubmissionRepository {
       db.submission.count({ where }),
     ]);
     return { rows, total };
+  }
+
+  /** For each user, the problems among `problemIds` that they solved (an AC on any version). */
+  async solvedBy(
+    db: Db,
+    userIds: string[],
+    problemIds: string[]
+  ): Promise<Map<string, Set<string>>> {
+    const solved = new Map<string, Set<string>>(userIds.map((id) => [id, new Set<string>()]));
+    if (userIds.length === 0 || problemIds.length === 0) return solved;
+    const rows = await db.submission.findMany({
+      where: { user_id: { in: userIds }, problem_id: { in: problemIds }, verdict: 'AC' },
+      distinct: ['user_id', 'problem_id'],
+      select: { user_id: true, problem_id: true },
+    });
+    for (const row of rows) solved.get(row.user_id)?.add(row.problem_id);
+    return solved;
+  }
+
+  /** The verdict of the latest finished submission of each problem, for one user. */
+  async latestVerdicts(
+    db: Db,
+    userId: string,
+    problemIds: string[]
+  ): Promise<Map<string, Verdict>> {
+    if (problemIds.length === 0) return new Map();
+    const rows = await db.submission.findMany({
+      where: { user_id: userId, problem_id: { in: problemIds }, status: 'completed' },
+      orderBy: [{ problem_id: 'asc' }, { created_at: 'desc' }, { id: 'desc' }],
+      distinct: ['problem_id'],
+      select: { problem_id: true, verdict: true },
+    });
+    return new Map(
+      rows.flatMap((row) => (row.verdict ? [[row.problem_id, row.verdict] as const] : []))
+    );
+  }
+
+  /** Has this user ever submitted to the problem? (Keeps their history readable after it leaves every Track.) */
+  async hasSubmitted(db: Db, userId: string, problemId: string): Promise<boolean> {
+    const found = await db.submission.findFirst({
+      where: { user_id: userId, problem_id: problemId },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   /** Queued submissions that Judge has not accepted yet and are due for another try. */

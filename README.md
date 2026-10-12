@@ -4,7 +4,7 @@ Core owns accounts, Spaces and permissions, problems, tests, submissions and the
 
 Stack: Node 22, TypeScript, Fastify 5, Prisma 7 (Neon Postgres), Zod, Cloudflare R2 (S3 API), winston → Better Stack, Jest.
 
-> Status: M1 gave the service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma and the API contracts. M2 adds OAuth sign-in and sessions, usernames, Spaces, members, invitations and the permission engine (see [docs/auth.md](docs/auth.md)). M3 adds problems with versions, tests, reference solutions, statement pictures, submissions and the signed Judge callback (see [docs/problems.md](docs/problems.md)). The Judge verification run and the real publish gate come in M4.
+> Status: M1 gave the service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma and the API contracts. M2 adds OAuth sign-in and sessions, usernames, Spaces, members, invitations and the permission engine (see [docs/auth.md](docs/auth.md)). M3 adds problems with versions, tests, reference solutions, statement pictures, submissions and the signed Judge callback (see [docs/problems.md](docs/problems.md)). Tracks and Collections decide which problems solvers can reach, with member invitations, progression and PDF statements (see [docs/tracks.md](docs/tracks.md)). The Judge verification run and the real publish gate come in M4.
 
 ## Run it
 
@@ -103,4 +103,5 @@ Without the Judge keys Core still accepts submissions; they stay `queued` until 
 - [docs/database.md](docs/database.md): Neon branches, roles, pooled vs direct URLs, connection limits, fixing a bad migration
 - [docs/problems.md](docs/problems.md): problems, versions, tests, storage, submissions, the Judge callback, limits
 - [docs/auth.md](docs/auth.md): sign-in, Spaces and the permission table
+- [docs/tracks.md](docs/tracks.md): Tracks, Collections, what solvers can reach, invitations, progression, PDF statements
 - [docs/decisions.md](docs/decisions.md): engineering decisions

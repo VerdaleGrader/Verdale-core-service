@@ -1,23 +1,32 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { IMAGE_MAX_BYTES } from '@/constants/limits';
+import { IMAGE_MAX_BYTES, PDF_MAX_BYTES } from '@/constants/limits';
 import { ValidationError } from '@/errors';
 import { readUploads } from '@/controllers/upload';
 import { requireUser } from '@/middleware/session';
 import ImageService from '@/services/problem/image.service';
+import { constraints } from '@/services/problem/problem.mapper';
 import ProblemService from '@/services/problem/problem.service';
+import StatementService from '@/services/problem/statement.service';
 import {
   createProblemBody,
   problemListQuery,
   problemSlugParams,
   slugParams,
+  statementPdfQuery,
   updateProblemBody,
 } from '@/validation/schemas';
 
 export default class ProblemController {
   constructor(
     private readonly problemService: ProblemService,
-    private readonly imageService: ImageService
+    private readonly imageService: ImageService,
+    private readonly statementService: StatementService
   ) {}
+
+  /** GET /api/v1/problem-constraints: the ranges the editor must respect, for the create page (no problem exists yet). */
+  async constraints(_request: FastifyRequest, reply: FastifyReply) {
+    return reply.send(constraints());
+  }
 
   /** GET /api/v1/spaces/:slug/problems */
   async list(request: FastifyRequest, reply: FastifyReply) {
@@ -115,5 +124,46 @@ export default class ProblemController {
       request.id
     );
     return reply.status(201).send(uploaded);
+  }
+
+  /** PUT /api/v1/spaces/:slug/problems/:problemSlug/statement/pdf */
+  async uploadStatementPdf(request: FastifyRequest, reply: FastifyReply) {
+    const user = requireUser(request);
+    const { slug, problemSlug } = problemSlugParams.parse(request.params);
+    // Check the right to edit before reading what may be a 10 MiB body.
+    await this.problemService.authorize(user, 'problem.update', slug, problemSlug);
+    const { files } = await readUploads(request, {
+      maxFileBytes: PDF_MAX_BYTES,
+      fileFields: ['file'],
+    });
+    if (!files.file) {
+      throw new ValidationError([{ field: 'file', message: 'Choose a PDF file to upload.' }]);
+    }
+    return reply.send(
+      await this.statementService.uploadPdf(user, slug, problemSlug, files.file, request.id)
+    );
+  }
+
+  /** GET /api/v1/spaces/:slug/problems/:problemSlug/statement/pdf */
+  async statementPdf(request: FastifyRequest, reply: FastifyReply) {
+    const { slug, problemSlug } = problemSlugParams.parse(request.params);
+    const { draft } = statementPdfQuery.parse(request.query);
+    const pdf = await this.statementService.readPdf(request.currentUser, slug, problemSlug, {
+      draft,
+    });
+    return (
+      reply
+        .type('application/pdf')
+        .header('Content-Length', pdf.size)
+        .header('Content-Disposition', 'inline; filename="statement.pdf"')
+        // The browser must not guess another type, run anything inside the file, or let
+        // another site embed it. The bytes are content-addressed, but access is per request.
+        .header('X-Content-Type-Options', 'nosniff')
+        .header('Content-Security-Policy', "default-src 'none'; sandbox")
+        .header('Cross-Origin-Resource-Policy', 'same-origin')
+        .header('Cache-Control', 'private, max-age=300')
+        .header('ETag', `"${pdf.sha256}"`)
+        .send(pdf.body)
+    );
   }
 }

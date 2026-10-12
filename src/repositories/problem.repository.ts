@@ -1,13 +1,17 @@
-import { Language, ProblemStatus } from '../../generated/prisma/enums';
+import { Language, ProblemStatus, StatementMode } from '../../generated/prisma/enums';
 import { Db, Prisma } from '@/repositories/db';
 
-const WITH_AUTHOR = { created_by: { select: { username: true, display_name: true } } } as const;
+const WITH_AUTHOR = {
+  created_by: { select: { username: true, display_name: true, avatar_url: true } },
+} as const;
 
 export interface ProblemListFilter {
   spaceId: string;
   q?: string;
   statuses: ProblemStatus[];
   createdById?: string;
+  /** Extra condition, e.g. "sits in a Track the viewer can see" for solvers (GRD-81). */
+  and?: Prisma.ProblemWhereInput;
   skip: number;
   take: number;
 }
@@ -15,6 +19,10 @@ export interface ProblemListFilter {
 export interface VersionContent {
   title?: string;
   statement?: string;
+  statement_mode?: StatementMode;
+  statement_pdf_sha256?: string | null;
+  statement_pdf_size_bytes?: number | null;
+  statement_pdf_pages?: number | null;
   time_limit_ms?: number;
   memory_limit_kb?: number;
   allowed_languages?: Language[];
@@ -117,6 +125,7 @@ export default class ProblemRepository {
       space_id: filter.spaceId,
       status: { in: filter.statuses },
       ...(filter.createdById ? { created_by_id: filter.createdById } : {}),
+      ...(filter.and ? { AND: [filter.and] } : {}),
       ...(filter.q
         ? {
             OR: [

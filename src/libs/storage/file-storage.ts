@@ -66,6 +66,11 @@ export function testFileKey(sha256: string): string {
   return `tests/${sha256}`;
 }
 
+/** Key of a PDF statement in the private bucket; the name is the SHA-256 of the file (GRD-73). */
+export function statementPdfKey(sha256: string): string {
+  return `statements/${sha256}`;
+}
+
 /** Key of a statement picture in the public bucket. */
 export function imageKey(fileName: string): string {
   return `images/${fileName}`;

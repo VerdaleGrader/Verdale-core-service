@@ -64,3 +64,30 @@ export const RESERVED_PROBLEM_SLUGS: ReadonlySet<string> = new Set([
 export function isValidProblemSlug(value: string): boolean {
   return PROBLEM_SLUG_PATTERN.test(value) && !RESERVED_PROBLEM_SLUGS.has(value);
 }
+
+/**
+ * Track and Collection slugs live inside a Space (/spaces/<space>/tracks/<slug>
+ * and /spaces/<space>/collections/<slug>), so they only avoid the words that
+ * are routes below those.
+ */
+export const RESERVED_GROUP_SLUGS: ReadonlySet<string> = new Set([
+  'new',
+  'edit',
+  'settings',
+  'members',
+  'invites',
+  'progress',
+  'collections',
+  'tracks',
+  'problems',
+  'reorder',
+  'archive',
+  'restore',
+]);
+
+export function isValidGroupSlug(value: string): boolean {
+  return PROBLEM_SLUG_PATTERN.test(value) && !RESERVED_GROUP_SLUGS.has(value);
+}
+
+/** Every Space starts with this Track, which can be renamed (GRD-78). */
+export const STARTER_TRACK = { name: 'General', slug: 'general' } as const;

@@ -20,23 +20,29 @@ space ─< problem ─< problem_version ─< test_case          (files in the pr
 
 The service refuses first (409 `VERSION_PUBLISHED`, or `PROBLEM_ARCHIVED`); a trigger in the database refuses everything that gets past it: updating a published version, adding, changing or deleting its tests and solutions, and deleting it (which also stops a cascade from deleting its problem). `src/services/problem/problem.test.ts` tests both layers. A submission points at the exact version it was judged against, so editing a problem later (a new version, M4) can never change an old result.
 
+## Tracks, Collections and PDF statements
+
+Problems reach solvers through Tracks and Collections (GRD-77 to GRD-82), and a version can have a PDF statement (GRD-73). Everything about them, including what solvers see and why, is in [tracks.md](tracks.md).
+
 ## Limits and ranges (decisions, 2026-10-11)
 
 All are in `src/constants/limits.ts` and are sent to the web app in `constraints`, so nothing is hard-coded twice. They sit inside the Judge contract (time 100 ms to 20 s, memory 16 MB to 2 GB) and inside CHECK constraints in the database.
 
-| What                              | Value                                               | Why                                                                                 |
-| --------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Time limit                        | 100 ms to 10 s, default 1 s                         | Judge allows up to 20 s; nobody needs that for a grader MVP and it blocks the queue |
-| Memory limit                      | 16 MB to 1 GB, default 256 MB                       | Judge allows 2 GB; the sandbox box is small                                         |
-| Title / statement                 | 200 / 100 000 characters                            | A statement is text; a hundred thousand characters is a long article                |
-| Tests per problem                 | 100                                                 | Judge accepts 500; 100 keeps a run short                                            |
-| One test file (after normalising) | 8 MiB                                               | Enough for 10^6 numbers; the upload is held in memory, so it must stay bounded      |
-| All tests of a problem            | 128 MiB                                             | Bounds storage and what Judge's disk cache must hold                                |
-| Sample test files                 | 64 KiB each, at most 10 samples                     | Samples are shown inline in the statement                                           |
-| Reference solutions               | 5 per problem, 64 KiB each                          | Judge's source limit                                                                |
-| Submission source                 | 64 KiB (bytes, not characters)                      | Judge's source limit                                                                |
-| Statement picture                 | 2 MiB; png, jpeg, webp                              | No SVG: it can carry script                                                         |
-| Submissions                       | 10 per minute per user (re-checks share the budget) | In-memory per process; GRD-55 tunes it                                              |
+| What                              | Value                                                                                       | Why                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Time limit                        | 100 ms to 10 s, default 1 s                                                                 | Judge allows up to 20 s; nobody needs that for a grader MVP and it blocks the queue  |
+| Memory limit                      | 16 MB to 1 GB, default 256 MB                                                               | Judge allows 2 GB; the sandbox box is small                                          |
+| Title / statement                 | 200 / 100 000 characters                                                                    | A statement is text; a hundred thousand characters is a long article                 |
+| Tests per problem                 | 100                                                                                         | Judge accepts 500; 100 keeps a run short                                             |
+| One test file (after normalising) | 8 MiB                                                                                       | Enough for 10^6 numbers; the upload is held in memory, so it must stay bounded       |
+| All tests of a problem            | 128 MiB                                                                                     | Bounds storage and what Judge's disk cache must hold                                 |
+| Sample test files                 | 64 KiB each, at most 10 samples                                                             | Samples are shown inline in the statement                                            |
+| Reference solutions               | 5 per problem, 64 KiB each                                                                  | Judge's source limit                                                                 |
+| Submission source                 | 64 KiB (bytes, not characters)                                                              | Judge's source limit                                                                 |
+| Statement picture                 | 2 MiB; png, jpeg, webp                                                                      | No SVG: it can carry script                                                          |
+| PDF statement                     | 10 MiB, 10 pages, not encrypted                                                             | A statement is read on screen; checked from the bytes, in a worker with a time limit |
+| Tracks / Collections / links      | 50 Tracks and 200 Collections per Space, 200 problems per Collection, 200 items per request | Keeps pages and reorder requests small                                               |
+| Submissions                       | 10 per minute per user (re-checks share the budget)                                         | In-memory per process; GRD-55 tunes it                                               |
 
 ## Test files (GRD-23, 24, 25)
 
@@ -94,6 +100,6 @@ See the README. In short: Judge's `callback.allowed_url_prefixes` must contain `
 ## Not done on purpose
 
 - Orphaned objects in storage are not cleaned up (M5).
-- Creating a new draft version of a published problem and the verification run (M4).
+- Creating a new draft version of a published problem and the verification run (M4). Progression already survives new versions (see tracks.md).
 - Rate limits and abuse rules beyond the submission limit (GRD-55).
 - Per-problem statistics, "solved" marks and leaderboards.

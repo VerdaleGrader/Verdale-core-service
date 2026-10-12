@@ -44,3 +44,21 @@ export const SUBMISSION_LIST_MAX_PAGE_SIZE = 50;
 
 /** How long a queued submission waits for Judge to come back before it is an ISE. */
 export const DISPATCH_GIVE_UP_MS = 30 * 60 * 1000;
+
+/** Tracks, Collections and what one request may carry (GRD-77 to GRD-79). */
+export const TRACK_LIMITS = {
+  max_tracks_per_space: 50,
+  max_collections_per_space: 200,
+  max_problems_per_collection: 200,
+  /** Problems, Collections or Tracks named in one add, remove or reorder request. */
+  max_items_per_request: 200,
+} as const;
+
+export const TRACK_INVITE_MAX_DAYS = 30;
+
+/** PDF statements (GRD-73): checked from the bytes, not the file name. */
+export const PDF_MAX_BYTES = 10 * MIB;
+export const PDF_MAX_PAGES = 10;
+
+/** Profile changes per user per minute (GRD-68). */
+export const PROFILE_UPDATES_PER_MINUTE = 10;

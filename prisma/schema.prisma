@@ -17,18 +17,23 @@ model User {
   email        String   @unique @db.VarChar(254)
   username     String   @unique @db.VarChar(32)
   display_name String   @db.VarChar(64)
+  // Profile picture URL from the sign-in provider, refreshed at every login
+  // (GRD-68). Null when the provider has none; the web app then shows initials.
+  avatar_url   String?  @db.VarChar(2048)
   created_at   DateTime @default(now()) @db.Timestamptz(3)
   updated_at   DateTime @updatedAt @db.Timestamptz(3)
 
-  oauth_accounts   OAuthAccount[]
-  sessions         Session[]
-  memberships      Membership[]
-  spaces_created   Space[]
-  invites_sent     Invite[]            @relation("InviteCreator")
-  invites_received Invite[]            @relation("InviteInvitee")
-  problems_created Problem[]
-  solutions_added  ReferenceSolution[]
-  submissions      Submission[]
+  oauth_accounts    OAuthAccount[]
+  sessions          Session[]
+  memberships       Membership[]
+  spaces_created    Space[]
+  invites_sent      Invite[]            @relation("InviteCreator")
+  invites_received  Invite[]            @relation("InviteInvitee")
+  problems_created  Problem[]
+  solutions_added   ReferenceSolution[]
+  submissions       Submission[]
+  track_memberships TrackMember[]
+  audit_entries     AuditLog[]
 
   @@map("users")
 }
@@ -102,6 +107,9 @@ model Space {
   memberships Membership[]
   invites     Invite[]
   problems    Problem[]
+  tracks      Track[]
+  collections Collection[]
+  audit_log   AuditLog[]
 
   @@index([visibility, archived_at])
   @@map("spaces")
@@ -130,6 +138,9 @@ model Invite {
   space_id      String       @db.Uuid
   created_by_id String       @db.Uuid
   invitee_id    String?      @db.Uuid
+  // Set for a Track invitation (GRD-80): accepting joins the Track, and the
+  // Space too as a solver when the person is not a member yet.
+  track_id      String?      @db.Uuid
   token_hash    String       @unique @db.VarChar(64)
   role          SpaceRole
   status        InviteStatus @default(pending)
@@ -137,10 +148,12 @@ model Invite {
   created_at    DateTime     @default(now()) @db.Timestamptz(3)
   responded_at  DateTime?    @db.Timestamptz(3)
 
-  space      Space @relation(fields: [space_id], references: [id], onDelete: Cascade)
-  created_by User  @relation("InviteCreator", fields: [created_by_id], references: [id])
-  invitee    User? @relation("InviteInvitee", fields: [invitee_id], references: [id], onDelete: Cascade)
+  space      Space  @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by User   @relation("InviteCreator", fields: [created_by_id], references: [id])
+  invitee    User?  @relation("InviteInvitee", fields: [invitee_id], references: [id], onDelete: Cascade)
+  track      Track? @relation(fields: [track_id], references: [id], onDelete: Cascade)
 
+  @@index([track_id, status])
   @@index([space_id, status])
   @@index([invitee_id, status])
   @@map("invites")
@@ -168,6 +181,11 @@ enum ProblemVersionStatus {
   published
 }
 
+enum StatementMode {
+  markdown
+  pdf
+}
+
 model Problem {
   id                 String        @id @default(uuid()) @db.Uuid
   space_id           String        @db.Uuid
@@ -183,11 +201,12 @@ model Problem {
   created_at         DateTime      @default(now()) @db.Timestamptz(3)
   updated_at         DateTime      @updatedAt @db.Timestamptz(3)
 
-  space           Space            @relation(fields: [space_id], references: [id], onDelete: Cascade)
-  created_by      User             @relation(fields: [created_by_id], references: [id])
-  current_version ProblemVersion?  @relation("CurrentVersion", fields: [current_version_id], references: [id], onDelete: SetNull)
-  versions        ProblemVersion[] @relation("VersionOfProblem")
-  submissions     Submission[]
+  space              Space               @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by         User                @relation(fields: [created_by_id], references: [id])
+  current_version    ProblemVersion?     @relation("CurrentVersion", fields: [current_version_id], references: [id], onDelete: SetNull)
+  versions           ProblemVersion[]    @relation("VersionOfProblem")
+  submissions        Submission[]
+  collection_entries CollectionProblem[]
 
   @@unique([space_id, slug])
   // Problem lists of a Space by status, newest change first.
@@ -197,19 +216,26 @@ model Problem {
 }
 
 model ProblemVersion {
-  id                String               @id @default(uuid()) @db.Uuid
-  problem_id        String               @db.Uuid
-  version_number    Int
-  status            ProblemVersionStatus @default(draft)
-  title             String               @db.VarChar(200)
+  id                       String               @id @default(uuid()) @db.Uuid
+  problem_id               String               @db.Uuid
+  version_number           Int
+  status                   ProblemVersionStatus @default(draft)
+  title                    String               @db.VarChar(200)
   // Markdown with KaTeX maths. Drafts may be empty; publishing requires text.
-  statement         String               @default("")
-  time_limit_ms     Int
-  memory_limit_kb   Int
-  allowed_languages Language[]
-  created_at        DateTime             @default(now()) @db.Timestamptz(3)
-  updated_at        DateTime             @updatedAt @db.Timestamptz(3)
-  published_at      DateTime?            @db.Timestamptz(3)
+  statement                String               @default("")
+  // How the statement is given (GRD-73): Markdown text, or an uploaded PDF in
+  // the private bucket (`statements/<sha256>`). Sample tests are separate
+  // either way. Part of the version, so frozen with it.
+  statement_mode           StatementMode        @default(markdown)
+  statement_pdf_sha256     String?              @db.VarChar(64)
+  statement_pdf_size_bytes Int?
+  statement_pdf_pages      Int?
+  time_limit_ms            Int
+  memory_limit_kb          Int
+  allowed_languages        Language[]
+  created_at               DateTime             @default(now()) @db.Timestamptz(3)
+  updated_at               DateTime             @updatedAt @db.Timestamptz(3)
+  published_at             DateTime?            @db.Timestamptz(3)
 
   problem             Problem             @relation("VersionOfProblem", fields: [problem_id], references: [id], onDelete: Cascade)
   current_of          Problem?            @relation("CurrentVersion")
@@ -361,4 +387,124 @@ model SubmissionTestResult {
 
   @@unique([submission_id, position])
   @@map("submission_test_results")
+}
+
+// --- Tracks and Collections (M3: GRD-77) ------------------------------------
+//
+// Space > Track > Collection > Problem. Solvers reach problems only through a
+// Track they may see (GRD-81); owners and editors see everything.
+
+// space: everyone who can see the Space sees the Track. members: only people
+// added to the Track (owners and editors always see it).
+enum TrackVisibility {
+  space
+  members
+}
+
+model Track {
+  id          String          @id @default(uuid()) @db.Uuid
+  space_id    String          @db.Uuid
+  name        String          @db.VarChar(80)
+  // Unique inside the Space; part of /spaces/<space>/tracks/<slug>.
+  slug        String          @db.VarChar(64)
+  description String          @default("") @db.VarChar(500)
+  // 1-based order among the Space's Tracks.
+  position    Int
+  visibility  TrackVisibility @default(space)
+  // Archiving hides the Track from solvers; nothing is deleted.
+  archived_at DateTime?       @db.Timestamptz(3)
+  created_at  DateTime        @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime        @updatedAt @db.Timestamptz(3)
+
+  space       Space             @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  collections TrackCollection[]
+  members     TrackMember[]
+  invites     Invite[]
+
+  @@unique([space_id, slug])
+  @@index([space_id, position])
+  @@map("tracks")
+}
+
+// A set of problems. May belong to no Track (then only owners and editors see it).
+model Collection {
+  id          String    @id @default(uuid()) @db.Uuid
+  space_id    String    @db.Uuid
+  name        String    @db.VarChar(80)
+  slug        String    @db.VarChar(64)
+  description String    @default("") @db.VarChar(500)
+  archived_at DateTime? @db.Timestamptz(3)
+  created_at  DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at  DateTime  @updatedAt @db.Timestamptz(3)
+
+  space    Space               @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  tracks   TrackCollection[]
+  problems CollectionProblem[]
+
+  @@unique([space_id, slug])
+  @@map("collections")
+}
+
+// A Collection can sit in several Tracks, each with its own order.
+model TrackCollection {
+  track_id      String @db.Uuid
+  collection_id String @db.Uuid
+  position      Int
+
+  track      Track      @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+
+  @@id([track_id, collection_id])
+  @@index([track_id, position])
+  @@index([collection_id])
+  @@map("track_collections")
+}
+
+// A problem can sit in several Collections. Removing a problem from a
+// Collection never deletes the problem.
+model CollectionProblem {
+  collection_id String @db.Uuid
+  problem_id    String @db.Uuid
+  position      Int
+
+  collection Collection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+  problem    Problem    @relation(fields: [problem_id], references: [id], onDelete: Cascade)
+
+  @@id([collection_id, problem_id])
+  @@index([collection_id, position])
+  @@index([problem_id])
+  @@map("collection_problems")
+}
+
+model TrackMember {
+  track_id   String   @db.Uuid
+  user_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+
+  track Track @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([track_id, user_id])
+  @@index([user_id])
+  @@map("track_members")
+}
+
+// Who did what to access (GRD-80): Track invitations, revocations and removals.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  space_id   String   @db.Uuid
+  actor_id   String?  @db.Uuid
+  // e.g. track.invite_created, track.invite_revoked, track.member_removed
+  action     String   @db.VarChar(64)
+  // The Track (or other object) the action was about; no foreign key so the record outlives it.
+  target_id  String?  @db.Uuid
+  data       Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(3)
+
+  space Space @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
+  @@index([space_id, created_at(sort: Desc)])
+  @@index([target_id, created_at(sort: Desc)])
+  @@map("audit_logs")
 }

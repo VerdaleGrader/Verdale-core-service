@@ -7,6 +7,7 @@ import {
 import { ConflictError, NotFoundError, ValidationError } from '@/errors';
 import { Db, isUniqueViolation } from '@/repositories/db';
 import SpaceRepository from '@/repositories/space.repository';
+import TrackRepository from '@/repositories/track.repository';
 import { Role, SpaceAccess, assertCan } from '@/services/space/space.access';
 import { Page, SpaceDto, toSpaceDto } from '@/services/space/space.mapper';
 
@@ -15,6 +16,8 @@ export interface CreateSpaceInput {
   slug: string;
   description: string;
   visibility: 'public' | 'private';
+  /** Name of the starter Track; "General" when left out. */
+  track_name?: string;
 }
 
 export interface UpdateSpaceInput {
@@ -33,7 +36,8 @@ export interface ListInput {
 export default class SpaceService {
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly spaces: SpaceRepository
+    private readonly spaces: SpaceRepository,
+    private readonly tracks: TrackRepository
   ) {}
 
   /** Loads a Space by slug together with the caller's role in it. */
@@ -70,6 +74,7 @@ export default class SpaceService {
           is_personal: false,
         });
         await this.spaces.addMember(tx, created.id, user.id, 'owner');
+        await this.tracks.createStarterTrack(tx, created.id, input.track_name);
         return created;
       });
       return toSpaceDto(space, 'owner', 1);

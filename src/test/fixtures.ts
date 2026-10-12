@@ -83,13 +83,48 @@ export const SOLUTION_SOURCE =
 export const HIDDEN = { input: '987654321 123456789\n', output: '1111111110\n' };
 
 /**
+ * Puts a problem in a Collection of the Space's starter Track "General" (GRD-81): solvers,
+ * outsiders and visitors only reach problems through a Track. Creates the Collection when it
+ * is not there yet. `track` can be any Track slug.
+ */
+export async function placeInTrack(
+  cast: Cast,
+  problemSlug: string,
+  { track = 'general', collection = 'general-set' }: { track?: string; collection?: string } = {}
+) {
+  const base = `/api/v1/spaces/${cast.slug}`;
+  const created = await cast.editor.request('POST', `${base}/collections`, {
+    name: collection,
+    slug: collection,
+    track_slugs: [track],
+  });
+  if (created.status !== 201 && created.status !== 409) {
+    throw new Error(
+      `could not create the collection: ${created.status} ${JSON.stringify(created.body)}`
+    );
+  }
+  if (created.status === 409) {
+    await cast.editor.request('POST', `${base}/tracks/${track}/collections`, {
+      collection_slugs: [collection],
+    });
+  }
+  const added = await cast.editor.request('POST', `${base}/collections/${collection}/problems`, {
+    problem_slugs: [problemSlug],
+  });
+  if (added.status !== 200) {
+    throw new Error(`could not add the problem: ${added.status} ${JSON.stringify(added.body)}`);
+  }
+}
+
+/**
  * A published problem: one sample ("1 2" -> "3") and one hidden test, and a
  * primary reference solution. Returns what the leak checks need.
  */
 export async function createPublishedProblem(
   cast: Cast,
   slug = 'sum',
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  { placed = true }: { placed?: boolean } = {}
 ) {
   await createDraft(cast.editor, cast.slug, slug, extra);
   const sample = await addTest(cast.editor, cast.slug, slug, '1 2\n', '3\n', true);
@@ -102,6 +137,7 @@ export async function createPublishedProblem(
   if (published.status !== 200) {
     throw new Error(`could not publish: ${published.status} ${JSON.stringify(published.body)}`);
   }
+  if (placed) await placeInTrack(cast, slug);
   return {
     slug,
     sample: sample.body,

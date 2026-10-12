@@ -9,6 +9,17 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.4.0 (2026-10-12)
+
+- Additive. Core public API gains Tracks and Collections and the rule that solvers reach problems only through a Track they can see (GRD-68, GRD-72 to GRD-82):
+  - `/api/v1/spaces/{slug}/tracks` and below (CRUD, archive/restore, whole-set reorder, Collections in a Track, members, invitations, `progress`), `/api/v1/spaces/{slug}/collections` and below (CRUD, archive/restore, add/remove/reorder problems). New schemas `Track`, `TrackDetail`, `Collection`, `CollectionDetail`, `TrackProblem`, `Progress`, `UserProgress`, `MemberProgress`.
+  - `GET /api/v1/problem-constraints` (the editor's limits, before any problem exists).
+  - `PUT` and `GET /api/v1/spaces/{slug}/problems/{problemSlug}/statement/pdf`; `statement_mode` (`markdown` or `pdf`) and `statement_pdf` on `Problem` and `ProblemVersion`; `PATCH` problem accepts `statement_mode`; `constraints.pdf`.
+  - `avatar_url` (nullable) on `Me` and `PublicUser`; `track_name` on `CreateSpaceRequest`; `track` (nullable) on `Invite` and `InviteOutcome`.
+- Behaviour change that is not a field change: `GET /spaces/{slug}/problems`, `GET .../problems/{problemSlug}` and `POST .../submissions` now answer for solvers, outsiders and visitors only for problems that sit in a Collection of a Track they can see (404 otherwise). Owners and editors are unaffected. Every existing Space gets a starter Track "General" with a Collection "General" holding its existing problems, so nothing a solver could see before disappears.
+- New required response fields (`avatar_url`, `statement_mode`, `statement_pdf`, `track`) are additive for readers that ignore unknown fields.
+- Deploy order: Core first (migration `add_tracks_and_collections` runs before it serves), then Frontend re-pins with `contracts:sync`. Judge needs no deploy.
+
 ## 0.3.0 (2026-10-11)
 
 - Additive. Core public API gains problems, tests, reference solutions and submissions (GRD-21 to GRD-27, GRD-43 to GRD-47): `/api/v1/spaces/{slug}/problems` and everything under it (editor view, publish, archive, images, tests, solutions, submissions), `/api/v1/submissions/{id}` with its Server-Sent Events stream and re-judge, and `/api/v1/assets/{name}`. New `Language`, `Verdict` and `TestVerdict` schemas use the same codes as the Judge contract.

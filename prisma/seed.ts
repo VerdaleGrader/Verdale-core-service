@@ -9,13 +9,22 @@
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import { PrismaClient } from '../generated/prisma/client';
+import { Prisma, PrismaClient } from '../generated/prisma/client';
 
 const users = [
   { email: 'owner@verdale.local', username: 'owner', display_name: 'Space Owner' },
   { email: 'editor@verdale.local', username: 'editor', display_name: 'Problem Editor' },
   { email: 'solver@verdale.local', username: 'solver', display_name: 'Problem Solver' },
 ];
+
+/** Every Space has a Track called General from the start (GRD-78). */
+async function ensureStarterTrack(tx: Prisma.TransactionClient, spaceId: string) {
+  await tx.track.upsert({
+    where: { space_id_slug: { space_id: spaceId, slug: 'general' } },
+    update: {},
+    create: { space_id: spaceId, name: 'General', slug: 'general', position: 1 },
+  });
+}
 
 async function main() {
   const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -51,6 +60,7 @@ async function main() {
           update: {},
           create: { space_id: personal.id, user_id: row.id, role: 'owner' },
         });
+        await ensureStarterTrack(tx, personal.id);
       }
 
       const shared = await tx.space.upsert({
@@ -64,6 +74,7 @@ async function main() {
           visibility: 'public',
         },
       });
+      await ensureStarterTrack(tx, shared.id);
       for (const [username, role] of [
         ['owner', 'owner'],
         ['editor', 'editor'],
