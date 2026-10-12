@@ -18,6 +18,13 @@ export interface SubmissionResultInput {
   signal: number | null;
   stdout_preview: string | null;
   checker_message: string | null;
+  /** What the program printed, kept for staff only (GRD-93); null when Judge sent none. */
+  output?: {
+    stdout: string | null;
+    stdout_size_bytes: number | null;
+    stderr: string | null;
+    stderr_size_bytes: number | null;
+  } | null;
 }
 
 export interface SubmissionCompletion {
@@ -201,10 +208,16 @@ export default class SubmissionRepository {
     return db.submissionTestResult.deleteMany({ where: { submission_id: submissionId } });
   }
 
-  createResults(db: Db, submissionId: string, results: SubmissionResultInput[]) {
-    return db.submissionTestResult.createMany({
-      data: results.map((result) => ({ ...result, submission_id: submissionId })),
-    });
+  async createResults(db: Db, submissionId: string, results: SubmissionResultInput[]) {
+    for (const { output, ...result } of results) {
+      await db.submissionTestResult.create({
+        data: {
+          ...result,
+          submission_id: submissionId,
+          ...(output ? { output: { create: output } } : {}),
+        },
+      });
+    }
   }
 }
 

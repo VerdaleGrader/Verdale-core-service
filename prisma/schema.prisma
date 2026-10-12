@@ -387,10 +387,27 @@ model SubmissionTestResult {
   stdout_preview  String?     @db.VarChar(1024)
   checker_message String?     @db.VarChar(256)
 
-  submission Submission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  submission Submission            @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  output     SubmissionTestOutput?
 
   @@unique([submission_id, position])
   @@map("submission_test_results")
+}
+
+// What the program printed on a test, as far as Judge kept it (GRD-93). Hidden
+// tests included, so it is only ever read for people who may see hidden tests
+// (owner, administrator, editor, observer), never for solvers.
+model SubmissionTestOutput {
+  result_id         String  @id @db.Uuid
+  stdout            String?
+  // Full size, so the web app can say the text was cut.
+  stdout_size_bytes BigInt?
+  stderr            String?
+  stderr_size_bytes BigInt?
+
+  result SubmissionTestResult @relation(fields: [result_id], references: [id], onDelete: Cascade)
+
+  @@map("submission_test_outputs")
 }
 
 // --- Tracks and Collections (M3: GRD-77) ------------------------------------

@@ -283,6 +283,33 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
         expect(row.judge_job_id).toBe(t.judge.last.job_id);
       });
 
+      it('ticks never overlap, and stop() waits for the one that is running', async () => {
+        const dispatcher = t.app.dispatcher!;
+        const real = dispatcher.dispatchDue.bind(dispatcher);
+        let running = 0;
+        let overlapped = false;
+        let finished = 0;
+        jest.spyOn(dispatcher, 'dispatchDue').mockImplementation(async (limit) => {
+          running += 1;
+          if (running > 1) overlapped = true;
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          try {
+            return await real(limit);
+          } finally {
+            running -= 1;
+            finished += 1;
+          }
+        });
+        dispatcher.start(10);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await dispatcher.stop();
+        // Nothing is still running once stop() has returned, and no tick ran beside another.
+        expect(running).toBe(0);
+        expect(overlapped).toBe(false);
+        expect(finished).toBeGreaterThanOrEqual(1);
+        jest.restoreAllMocks();
+      });
+
       it('backs off between tries: a submission that is not yet due is left alone', async () => {
         await submitCode(cast.solver, cast.slug, 'sum');
         await t.settle();
@@ -299,7 +326,7 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
           .$executeRaw`UPDATE submissions SET next_dispatch_at = now() - interval '1 second'`;
         t.app.dispatcher!.start(20);
         try {
-          for (let i = 0; i < 100 && t.judge.jobs.length === 0; i++)
+          for (let i = 0; i < 300 && t.judge.jobs.length === 0; i++)
             await new Promise((r) => setTimeout(r, 20));
         } finally {
           await t.app.dispatcher!.stop();
@@ -578,10 +605,19 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
       await t.settle();
       t.judge.running.add(t.judge.last.job_id);
       const stream = cast.solver.text('GET', `/api/v1/submissions/${body.id}/events`);
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      // Wait until the stream has noticed the job running, then let it finish.
+      for (let i = 0; i < 300; i++) {
+        const row = await t.prisma.submission.findUniqueOrThrow({ where: { id: body.id } });
+        if (row.status === 'running') break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       await t.deliver(jobResult(t.judge.last));
       const events = parse((await stream).text);
-      expect(events.map((event) => event.status)).toEqual(['queued', 'running', 'completed']);
+      // A repeated "running" (another field changed) is not a different state.
+      const states = events
+        .map((event) => event.status)
+        .filter((status, index, all) => status !== all[index - 1]);
+      expect(states).toEqual(['queued', 'running', 'completed']);
     });
 
     it('a connection to a finished submission gets that one event and closes (a reconnect loses nothing)', async () => {

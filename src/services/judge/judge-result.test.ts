@@ -56,6 +56,43 @@ describeDb('Result callback from Judge (GRD-45)', () => {
       expect(results[0]).toMatchObject({ stdout_preview: '3\n', exit_code: 0 });
     });
 
+    it('asks Judge to capture output and keeps it for every test that ran, hidden ones too (GRD-93)', async () => {
+      expect(t.judge.last.capture).toEqual({
+        stdout_bytes: 64 * 1024,
+        stderr_bytes: 8 * 1024,
+        total_bytes: 2 * 1024 * 1024,
+      });
+      const result = jobResult(t.judge.last, { verdict: 'RE' });
+      result.tests = result.tests.map((test, index) => ({
+        ...test,
+        stdout: index === 0 ? '3\n' : `bad\u0000${'x'.repeat(70_000)}`,
+        stdout_size_bytes: index === 0 ? 2 : 70_004,
+        ...(index === 1 ? { stderr: 'boom\n', stderr_size_bytes: 5 } : {}),
+      }));
+      expect((await t.deliver(result)).status).toBe(204);
+      const outputs = await t.prisma.submissionTestOutput.findMany({
+        include: { result: true },
+        orderBy: { result: { position: 'asc' } },
+      });
+      expect(outputs).toHaveLength(2);
+      expect(outputs[0]).toMatchObject({ stdout: '3\n', stdout_size_bytes: 2n, stderr: null });
+      // A NUL byte cannot be stored, the text is cut to the limit, and the real size is kept.
+      expect(outputs[1]!.stdout!.startsWith('bad\uFFFDxxx')).toBe(true);
+      expect(outputs[1]!.stdout!.length).toBe(64 * 1024);
+      expect(outputs[1]).toMatchObject({ stdout_size_bytes: 70_004n, stderr: 'boom\n' });
+      expect(outputs[1]!.result.is_sample).toBe(false);
+    });
+
+    it('a solver never sees captured output', async () => {
+      const result = jobResult(t.judge.last);
+      result.tests = result.tests.map((test) => ({ ...test, stdout: 'CAPTURED-SECRET\n' }));
+      await t.deliver(result);
+      const body = JSON.stringify(
+        (await cast.solver.request('GET', `/api/v1/submissions/${submissionId}`)).body
+      );
+      expect(body).not.toContain('CAPTURED-SECRET');
+    });
+
     it('turns Judge’s verdicts into ours one for one', async () => {
       for (const verdict of ['AC', 'WA', 'TLE', 'MLE', 'RE', 'OLE'] as const) {
         const { body } = await submitCode(cast.editor, cast.slug, 'sum');
