@@ -31,6 +31,8 @@ import { Role, SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/sp
 export interface CreateSubmissionInput {
   language: string;
   source: string;
+  /** The Track the solver is working in; must reach the problem. Left out: the first that does. */
+  track?: string;
 }
 
 export interface SubmissionListInput {
@@ -96,10 +98,24 @@ export default class SubmissionService {
       ]);
     }
 
+    const track = await this.catalog.trackForSubmission(
+      this.prisma,
+      problem.id,
+      user.id,
+      isReader(access.role),
+      input.track?.toLowerCase()
+    );
+    if (track === undefined) {
+      throw new ValidationError([
+        { field: 'track', message: 'This Track does not reach this problem.' },
+      ]);
+    }
+
     const testStats = await this.tests.stats(this.prisma, version.id);
     const created = await this.submissions.create(this.prisma, {
       user_id: user.id,
       problem_id: problem.id,
+      track_id: track?.id ?? null,
       problem_version_id: version.id,
       language: input.language as 'c' | 'cpp' | 'python',
       source: input.source,

@@ -50,6 +50,9 @@ import TestCaseService from '@/services/problem/test-case.service';
 import JudgeResultService from '@/services/judge/judge-result.service';
 import JudgeDispatcher from '@/services/submission/dispatcher';
 import SubmissionService from '@/services/submission/submission.service';
+import SubmissionReviewService from '@/services/submission/submission-review.service';
+import SubmissionReviewController from '@/controllers/submission/submission-review.controller';
+import SubmissionReportRepository from '@/repositories/submission-report.repository';
 import { SUBMISSIONS_PER_MINUTE, TEST_LIMITS } from '@/constants/limits';
 import InviteService from '@/services/space/invite.service';
 import MemberService from '@/services/space/member.service';
@@ -273,6 +276,17 @@ function registerApi(
     dispatcher,
     now
   );
+  const submissionReviewService = new SubmissionReviewService(
+    prisma,
+    new SubmissionReportRepository(),
+    submissionRepository,
+    catalogRepository,
+    spaceRepository,
+    testCaseRepository,
+    spaceService,
+    storage.tests,
+    now
+  );
   const judgeResultService = new JudgeResultService(
     prisma,
     submissionRepository,
@@ -290,6 +304,7 @@ function registerApi(
     submissionService,
     tuning?.streamIntervalMs
   );
+  const submissionReviewController = new SubmissionReviewController(submissionReviewService);
   const judgeResultController = new JudgeResultController(judgeResultService);
   const userController = new UserController(userService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
@@ -508,7 +523,38 @@ function registerApi(
           submissionController.create.bind(submissionController)
         );
         v1.get(`${problem}/submissions`, submissionController.list.bind(submissionController));
+        // Space-wide submissions for owners, administrators, editors and observers (GRD-93).
+        const spaceSubmissions = '/spaces/:slug/submissions';
+        v1.get(spaceSubmissions, submissionReviewController.rows.bind(submissionReviewController));
+        v1.get(
+          `${spaceSubmissions}/versions`,
+          submissionReviewController.versions.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-member`,
+          submissionReviewController.byMember.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-member/:username/problems`,
+          submissionReviewController.memberProblems.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-track`,
+          submissionReviewController.byTrack.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-track/:trackSlug/problems`,
+          submissionReviewController.trackProblems.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-problem`,
+          submissionReviewController.byProblem.bind(submissionReviewController)
+        );
         v1.get('/submissions/:submissionId', submissionController.get.bind(submissionController));
+        v1.get(
+          '/submissions/:submissionId/tests/:position',
+          submissionReviewController.testDetail.bind(submissionReviewController)
+        );
         v1.get(
           '/submissions/:submissionId/events',
           submissionController.events.bind(submissionController)

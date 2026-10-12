@@ -578,7 +578,7 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
       await t.settle();
       t.judge.running.add(t.judge.last.job_id);
       const stream = cast.solver.text('GET', `/api/v1/submissions/${body.id}/events`);
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 400));
       await t.deliver(jobResult(t.judge.last));
       const events = parse((await stream).text);
       expect(events.map((event) => event.status)).toEqual(['queued', 'running', 'completed']);

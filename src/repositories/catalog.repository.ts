@@ -207,6 +207,35 @@ export default class CatalogRepository {
     return found !== null;
   }
 
+  /**
+   * The Track a submission counts towards (GRD-93): the one asked for when it
+   * reaches the problem for this person, else the first one that does. Staff
+   * reach every active Track; null when no Track reaches the problem.
+   */
+  async trackForSubmission(
+    db: Db,
+    problemId: string,
+    userId: string,
+    staff: boolean,
+    preferredSlug?: string
+  ) {
+    const reaches: Prisma.TrackWhereInput = {
+      ...(staff ? { archived_at: null } : trackVisibleWhere(userId)),
+      collections: {
+        some: {
+          collection: { archived_at: null, problems: { some: { problem_id: problemId } } },
+        },
+      },
+    };
+    const tracks = await db.track.findMany({
+      where: reaches,
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      select: { id: true, slug: true },
+    });
+    if (preferredSlug) return tracks.find((track) => track.slug === preferredSlug) ?? undefined;
+    return tracks[0] ?? null;
+  }
+
   // --- the problems of a Track (for progression) --------------------------
 
   /** Distinct published problems in the non-archived Collections of a Track. */

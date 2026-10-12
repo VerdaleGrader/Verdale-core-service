@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client';
-import { DISPATCH_GIVE_UP_MS, OUTPUT_LIMIT_KB } from '@/constants/limits';
+import { CAPTURE, DISPATCH_GIVE_UP_MS, OUTPUT_LIMIT_KB } from '@/constants/limits';
 import { JobRequest, JudgeClient, JudgeRejectedError, JudgeUnavailableError } from '@/libs/judge';
 import TLogger, { Layer } from '@/logging/logger';
 import ProblemRepository from '@/repositories/problem.repository';
@@ -93,6 +93,7 @@ export default class JudgeDispatcher {
         output_kb: OUTPUT_LIMIT_KB,
       },
       checker: 'line',
+      capture: { ...CAPTURE },
       tests: tests.map((test) => ({
         id: test.id,
         input: { sha256: test.input_sha256, size_bytes: test.input_size_bytes },
