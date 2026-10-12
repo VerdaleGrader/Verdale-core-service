@@ -19,6 +19,10 @@ export interface ProblemListFilter {
 export interface VersionContent {
   title?: string;
   statement?: string;
+  statement_mode?: 'markdown' | 'pdf';
+  statement_pdf_sha256?: string | null;
+  statement_pdf_size_bytes?: number | null;
+  statement_pdf_pages?: number | null;
   time_limit_ms?: number;
   memory_limit_kb?: number;
   allowed_languages?: Language[];

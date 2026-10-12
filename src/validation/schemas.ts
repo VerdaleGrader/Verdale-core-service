@@ -141,6 +141,7 @@ export const updateProblemBody = z
   .object({
     title: problemTitle.optional(),
     statement: problemStatement.optional(),
+    statement_mode: z.enum(['markdown', 'pdf']).optional(),
     time_limit_ms: timeLimit.optional(),
     memory_limit_kb: memoryLimit.optional(),
     allowed_languages: allowedLanguages.optional(),
@@ -414,5 +415,7 @@ export const generateBody = z.object({
   solution_id: z.uuid(),
   test_ids: z.array(z.uuid()).min(1).max(500).optional(),
 });
+
+export const statementPdfQuery = z.object({ draft: queryBoolean });
 
 export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });

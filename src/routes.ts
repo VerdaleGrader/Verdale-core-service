@@ -44,6 +44,7 @@ import TestCaseRepository from '@/repositories/test-case.repository';
 import UserRepository from '@/repositories/user.repository';
 import AuthService from '@/services/auth/auth.service';
 import ImageService from '@/services/problem/image.service';
+import StatementService from '@/services/problem/statement.service';
 import ProblemService from '@/services/problem/problem.service';
 import GenerateService from '@/services/problem/generate.service';
 import GenerateRepository from '@/repositories/generate.repository';
@@ -260,6 +261,12 @@ function registerApi(
     problemService
   );
   const imageService = new ImageService(prisma, problemService, storage.assets, publicAssetBaseUrl);
+  const statementService = new StatementService(
+    prisma,
+    problemRepository,
+    problemService,
+    storage.tests
+  );
   const generateService = new GenerateService(
     prisma,
     new GenerateRepository(),
@@ -313,7 +320,7 @@ function registerApi(
   );
 
   const authController = new AuthController(authService, auth, oauthProviders);
-  const problemController = new ProblemController(problemService, imageService);
+  const problemController = new ProblemController(problemService, imageService, statementService);
   const testCaseController = new TestCaseController(
     testCaseService,
     problemService,
@@ -497,6 +504,15 @@ function registerApi(
         v1.post(`${problem}/publish`, problemController.publish.bind(problemController));
         v1.post(`${problem}/archive`, problemController.archive.bind(problemController));
         v1.post(`${problem}/images`, problemController.uploadImage.bind(problemController));
+        v1.put(
+          `${problem}/statement-pdf`,
+          problemController.uploadStatementPdf.bind(problemController)
+        );
+        v1.delete(
+          `${problem}/statement-pdf`,
+          problemController.removeStatementPdf.bind(problemController)
+        );
+        v1.get(`${problem}/statement.pdf`, problemController.statementPdf.bind(problemController));
         v1.get('/assets/:name', assetController.get.bind(assetController));
 
         v1.get(`${problem}/tests`, testCaseController.list.bind(testCaseController));

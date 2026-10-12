@@ -690,6 +690,8 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
           'slug',
           'space',
           'statement',
+          'statement_mode',
+          'statement_pdf',
           'status',
           'time_limit_ms',
           'title',

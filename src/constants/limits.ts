@@ -34,6 +34,10 @@ export const SOLUTIONS_MAX_COUNT = 5;
 /** Output a program may write per test, in KB. Judge's own default and maximum. */
 export const OUTPUT_LIMIT_KB = 65_536;
 
+/** A PDF statement (GRD-73). */
+export const PDF_MAX_BYTES = 10 * MIB;
+export const PDF_MAX_PAGES = 10;
+
 export const IMAGE_MAX_BYTES = 2 * MIB;
 export const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 

@@ -218,6 +218,13 @@ model Problem {
   @@map("problems")
 }
 
+enum StatementMode {
+  markdown
+  pdf
+
+  @@map("statement_mode")
+}
+
 model ProblemVersion {
   id                String               @id @default(uuid()) @db.Uuid
   problem_id        String               @db.Uuid
@@ -226,6 +233,11 @@ model ProblemVersion {
   title             String               @db.VarChar(200)
   // Markdown with KaTeX maths. Drafts may be empty; publishing requires text.
   statement         String               @default("")
+  // Markdown or an uploaded PDF (GRD-73). Both can be kept on a draft; the mode says which one solvers get.
+  statement_mode    StatementMode        @default(markdown)
+  statement_pdf_sha256     String?       @db.VarChar(64)
+  statement_pdf_size_bytes Int?
+  statement_pdf_pages      Int?
   time_limit_ms     Int
   memory_limit_kb   Int
   allowed_languages Language[]

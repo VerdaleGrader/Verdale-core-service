@@ -836,6 +836,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/statement-pdf': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Upload the PDF statement of the draft (owner, administrator or editor)
+     * @description `multipart/form-data` with one `file` part. The bytes must be a PDF (`%PDF-` header, readable,
+     *     not password-protected), at most `constraints.statement_pdf.max_bytes` and `max_pages` pages.
+     *     The file is stored in the private bucket under its SHA-256 and the draft switches to `pdf` mode.
+     *     A new upload replaces the previous one. Sample input and output stay separate fields.
+     */
+    put: operations['uploadStatementPdf'];
+    post?: never;
+    /** Take the PDF off the draft and go back to Markdown (owner, administrator or editor) */
+    delete: operations['removeStatementPdf'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/statement.pdf': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The PDF statement
+     * @description Same visibility as the problem: a solver gets the current version only when the problem is
+     *     in a Track they can reach; anyone else gets 404. Staff can pass `draft=true` for the draft they
+     *     are editing. Sent as `application/pdf` with `X-Content-Type-Options: nosniff` and
+     *     `Content-Security-Policy: sandbox; default-src 'none'`, so scripts in a PDF cannot run on our origin.
+     */
+    get: operations['getStatementPdf'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/assets/{name}': {
     parameters: {
       query?: never;
@@ -1613,6 +1660,11 @@ export interface components {
       memory_limit_kb: components['schemas']['Range'];
       languages: components['schemas']['Language'][];
       tests: components['schemas']['TestLimits'];
+      /** @description Limits of an uploaded PDF statement. */
+      statement_pdf: {
+        max_bytes: number;
+        max_pages: number;
+      };
       images: {
         max_bytes: number;
         content_types: string[];
@@ -1636,6 +1688,7 @@ export interface components {
     UpdateProblemRequest: {
       title?: string;
       statement?: string;
+      statement_mode?: components['schemas']['StatementMode'];
       time_limit_ms?: number;
       memory_limit_kb?: number;
       allowed_languages?: components['schemas']['Language'][];
@@ -1686,8 +1739,14 @@ export interface components {
       status: components['schemas']['ProblemStatus'];
       space: components['schemas']['SpaceRef'];
       title: string;
-      /** @description Markdown with `$...$` and `$$...$$` maths */
+      /** @description Markdown with `$...$` and `$$...$$` maths. Empty in `pdf` mode. */
       statement: string;
+      statement_mode: components['schemas']['StatementMode'];
+      /** @description The PDF in `pdf` mode; fetch it from `GET .../statement.pdf`. */
+      statement_pdf: {
+        size_bytes: number;
+        pages: number;
+      } | null;
       version_number: number;
       time_limit_ms: number;
       memory_limit_kb: number;
@@ -1699,6 +1758,11 @@ export interface components {
       /** Format: date-time */
       published_at: string | null;
     };
+    /**
+     * @description What solvers read as the statement, a Markdown text or an uploaded PDF.
+     * @enum {string}
+     */
+    StatementMode: 'markdown' | 'pdf';
     ProblemVersion: {
       /** Format: uuid */
       id: string;
@@ -1707,6 +1771,13 @@ export interface components {
       status: 'draft' | 'published';
       title: string;
       statement: string;
+      statement_mode: components['schemas']['StatementMode'];
+      /** @description The uploaded PDF. Kept on the draft even while the mode is `markdown`. */
+      statement_pdf: {
+        size_bytes: number;
+        pages: number;
+        sha256: string;
+      } | null;
       time_limit_ms: number;
       memory_limit_kb: number;
       allowed_languages: components['schemas']['Language'][];
@@ -3983,6 +4054,102 @@ export interface operations {
       403: components['responses']['Error'];
       404: components['responses']['Error'];
       409: components['responses']['Error'];
+    };
+  };
+  uploadStatementPdf: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Stored; the editor view of the draft */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  removeStatementPdf: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed; the editor view of the draft */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getStatementPdf: {
+    parameters: {
+      query?: {
+        draft?: boolean;
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The PDF */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/pdf': string;
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
     };
   };
   getAsset: {

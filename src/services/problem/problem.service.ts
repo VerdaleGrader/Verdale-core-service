@@ -55,6 +55,7 @@ export interface CreateProblemInput {
 export interface UpdateProblemInput {
   title?: string;
   statement?: string;
+  statement_mode?: 'markdown' | 'pdf';
   time_limit_ms?: number;
   memory_limit_kb?: number;
   allowed_languages?: string[];
@@ -75,6 +76,9 @@ export interface ProblemDto {
   space: { name: string; slug: string };
   title: string;
   statement: string;
+  statement_mode: 'markdown' | 'pdf';
+  /** Present in PDF mode: fetch it from GET .../statement.pdf. */
+  statement_pdf: { size_bytes: number; pages: number } | null;
   version_number: number;
   time_limit_ms: number;
   memory_limit_kb: number;
@@ -173,6 +177,8 @@ export default class ProblemService {
       access.space.archived_at === null;
     const checks = buildPublishChecks({
       statement: version.statement,
+      statementMode: version.statement_mode,
+      hasStatementPdf: version.statement_pdf_sha256 !== null,
       languageCount: version.allowed_languages.length,
       testCount: testStats.count,
       sampleCount: testStats.sample_count,
@@ -245,7 +251,15 @@ export default class ProblemService {
       status: problem.status,
       space: { name: access.space.name, slug: access.space.slug },
       title: version.title,
-      statement: version.statement,
+      statement: version.statement_mode === 'pdf' ? '' : version.statement,
+      statement_mode: version.statement_mode,
+      statement_pdf:
+        version.statement_mode === 'pdf' && version.statement_pdf_sha256
+          ? {
+              size_bytes: version.statement_pdf_size_bytes!,
+              pages: version.statement_pdf_pages!,
+            }
+          : null,
       version_number: version.version_number,
       time_limit_ms: version.time_limit_ms,
       memory_limit_kb: version.memory_limit_kb,
@@ -473,6 +487,8 @@ export default class ProblemService {
       ]);
       const checks = buildPublishChecks({
         statement: draft!.statement,
+        statementMode: draft!.statement_mode,
+        hasStatementPdf: draft!.statement_pdf_sha256 !== null,
         languageCount: draft!.allowed_languages.length,
         testCount: testStats.count,
         sampleCount: testStats.sample_count,

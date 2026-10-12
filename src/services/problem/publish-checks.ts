@@ -6,6 +6,8 @@ export interface PublishCheck {
 
 export interface PublishFacts {
   statement: string;
+  statementMode: 'markdown' | 'pdf';
+  hasStatementPdf: boolean;
   languageCount: number;
   testCount: number;
   sampleCount: number;
@@ -21,12 +23,7 @@ export interface PublishFacts {
  */
 export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
   return [
-    {
-      key: 'statement',
-      ok: facts.statement.trim().length > 0,
-      message:
-        facts.statement.trim().length > 0 ? 'The statement is written.' : 'Write the statement.',
-    },
+    statementCheck(facts),
     {
       key: 'languages',
       ok: facts.languageCount >= 1,
@@ -65,4 +62,22 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
         : 'Attach a reference solution and mark it as primary.',
     },
   ];
+}
+
+function statementCheck(facts: PublishFacts): PublishCheck {
+  if (facts.statementMode === 'pdf') {
+    return {
+      key: 'statement',
+      ok: facts.hasStatementPdf,
+      message: facts.hasStatementPdf
+        ? 'The statement is a PDF.'
+        : 'Upload the PDF statement, or switch back to Markdown.',
+    };
+  }
+  const written = facts.statement.trim().length > 0;
+  return {
+    key: 'statement',
+    ok: written,
+    message: written ? 'The statement is written.' : 'Write the statement.',
+  };
 }
