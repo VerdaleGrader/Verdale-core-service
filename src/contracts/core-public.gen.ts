@@ -270,7 +270,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Edit name, description or visibility (owner only; the slug never changes) */
+    /** Edit name, description or visibility (owner or administrator; only the owner can change visibility; the slug never changes) */
     patch: operations['updateSpace'];
     trace?: never;
   };
@@ -323,15 +323,18 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Remove a member (owner only)
-     * @description Removing the last owner is refused with 409.
+     * Remove a member (owner or administrator)
+     * @description The owner cannot be removed (409); an administrator can only remove editors, observers and solvers.
      */
     delete: operations['removeMember'];
     options?: never;
     head?: never;
     /**
-     * Change a member's role (owner only)
-     * @description Demoting the last owner is refused with 409.
+     * Change a member's role (owner or administrator)
+     * @description The owner can set any role. An administrator can only move editors, observers and
+     *     solvers between those three roles (403 otherwise). Sending `owner` hands the Space
+     *     over (owner only): the previous owner becomes an administrator. The owner cannot be
+     *     demoted directly (409).
      */
     patch: operations['changeMemberRole'];
     trace?: never;
@@ -347,7 +350,7 @@ export interface paths {
     put?: never;
     /**
      * Leave a Space
-     * @description The last owner cannot leave (409). Allowed in an archived Space.
+     * @description The owner cannot leave (409); hand the Space over first. Allowed in an archived Space.
      */
     post: operations['leaveSpace'];
     delete?: never;
@@ -363,11 +366,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Pending, unexpired invitations of a Space (owner only) */
+    /** Pending, unexpired invitations of a Space (owner or administrator) */
     get: operations['listSpaceInvites'];
     put?: never;
     /**
-     * Invite by link, or by username (owner only)
+     * Invite by link, or by username (owner or administrator)
      * @description Without `username` the result carries a `link` that anyone logged in can use once.
      *     With `username` only that user can answer it. The `token` is returned once and only
      *     its hash is stored. Invitations never grant `owner`.
@@ -389,7 +392,7 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Revoke a pending invitation (owner only) */
+    /** Revoke a pending invitation (owner or administrator) */
     delete: operations['revokeInvite'];
     options?: never;
     head?: never;
@@ -482,14 +485,14 @@ export interface paths {
     /**
      * Problems of a Space
      * @description Visitors and solvers only ever see `published` problems, whatever `status` says.
-     *     Owners and editors can also list `draft` and `archived` problems, or `all`
+     *     Owners, administrators, editors and observers can also list `draft` and `archived` problems, or `all`
      *     (default `published`); `mine=true` keeps the ones they created.
      *     A private Space answers 404 to everyone who is not a member.
      */
     get: operations['listProblems'];
     put?: never;
     /**
-     * Start a draft problem (owner or editor)
+     * Start a draft problem (owner, administrator or editor)
      * @description Creates the problem with an empty draft (version 1). Fill it with `PATCH`.
      *     Not allowed in an archived Space.
      */
@@ -511,7 +514,7 @@ export interface paths {
      * A problem as the solver sees it
      * @description The statement, limits, allowed languages and the sample tests, nothing else:
      *     hidden tests, reference solutions and internal data are never sent here.
-     *     A draft problem answers 404 unless the caller is an owner or editor of the Space,
+     *     A draft problem answers 404 unless the caller is staff of the Space (owner, administrator, editor or observer),
      *     who then sees exactly what solvers will see (a preview). Archived problems stay
      *     readable but report `accepts_submissions: false`.
      */
@@ -519,14 +522,14 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Delete a draft problem (owner or editor)
+     * Delete a draft problem (owner, administrator or editor)
      * @description A problem that has been published cannot be deleted; archive it instead (409).
      */
     delete: operations['deleteProblem'];
     options?: never;
     head?: never;
     /**
-     * Edit the draft (owner or editor)
+     * Edit the draft (owner, administrator or editor)
      * @description Changes title, statement, limits or allowed languages of the draft version.
      *     A published version never changes: 409 `VERSION_PUBLISHED`.
      *     Limits outside the ranges in `constraints` are refused with a `details` entry per field.
@@ -542,7 +545,7 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Everything the editor needs (owner or editor)
+     * Everything the editor needs (owner, administrator, editor or observer)
      * @description The draft (or, when there is none, the current version), the numbers behind
      *     the test and solution lists, the publish checklist and the allowed ranges.
      *     Readable in an archived Space; `editable` says whether it can be changed.
@@ -566,10 +569,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Publish the draft (owner or editor)
+     * Publish the draft (owner, administrator or editor)
      * @description Makes the draft the published, immutable version. Needs a statement, at least
-     *     one sample test, one test in total, one allowed language and a primary reference
-     *     solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
+     *     one sample test, one test in total with an expected output for every test, one allowed
+     *     language and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
      *     Provisional: Milestone 4 puts the verification run (reference solution against
      *     every test on Judge) in front of this step.
      */
@@ -590,7 +593,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Archive a published problem (owner or editor)
+     * Archive a published problem (owner, administrator or editor)
      * @description It stays readable but no longer accepts submissions. A never-published draft is deleted instead (409).
      */
     post: operations['archiveProblem'];
@@ -610,7 +613,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Upload a picture for the statement (owner or editor)
+     * Upload a picture for the statement (owner, administrator or editor)
      * @description `multipart/form-data` with one `file` part: png, jpeg or webp, at most `constraints.images.max_bytes`.
      *     The type is read from the bytes, not the file name. The stored name is random.
      *     Returns the public URL and a ready-to-paste Markdown image.
@@ -631,14 +634,14 @@ export interface paths {
     };
     /**
      * The PDF statement
-     * @description Same permission as reading the problem: 404 for a draft (unless owner or editor), for a problem outside every Track
-     *     the caller can see, and for a private Space. `draft=true` returns the draft's file to owners and editors.
+     * @description Same permission as reading the problem: 404 for a draft (unless staff), for a problem outside every Track
+     *     the caller can see, and for a private Space. `draft=true` returns the draft's file to the staff.
      *     Served as `application/pdf` with `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox` and
      *     `Cache-Control: private`, so nothing inside it can run in our pages.
      */
     get: operations['getStatementPdf'];
     /**
-     * Upload the PDF statement and switch to PDF mode (owner or editor)
+     * Upload the PDF statement and switch to PDF mode (owner, administrator or editor)
      * @description `multipart/form-data` with one `file` part. The file must start with `%PDF-` (the name and declared type are not
      *     trusted), be at most `constraints.pdf.max_bytes`, have at most `constraints.pdf.max_pages` pages, and not be encrypted.
      *     The 400 `details` entry for `file` names the file and the reason. Stored in the private bucket under its SHA-256.
@@ -680,17 +683,64 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Tests of the draft, with totals and limits (owner or editor) */
-    get: operations['listTestCases'];
-    put?: never;
     /**
-     * Add a test at the end (owner or editor)
+     * Tests of the draft, with totals and limits (owner, administrator, editor, observer)
+     * @description A testcase can wait for its expected output: `output_sha256` and `output_size_bytes` are
+     *     then null and `summary.missing_output_count` counts it (publishing is blocked until none
+     *     is left, see `PublishCheck`). `revision` identifies the current order, files and
+     *     visibility; send it back to `saveTestCases` so two people editing at once cannot
+     *     overwrite each other.
+     */
+    get: operations['listTestCases'];
+    /**
+     * Save every change of the testcases page at once (owner, administrator or editor)
+     * @description `tests` is the list the problem should have afterwards, in order; a testcase that is
+     *     not listed is removed. An entry with `id` keeps that testcase; without `id` it is new
+     *     and needs an `input`. `input` and `output` refer to files by hash, uploaded earlier with
+     *     `stageTestFile` or created by Generate; a left-out file stays as it is (a new testcase
+     *     without `output` has none yet). Either everything is saved or nothing.
+     *     `revision` is the one `listTestCases` returned; when the testcases have changed since,
+     *     409 `TESTS_CHANGED` and nothing is saved. Without it the check is skipped.
+     *     Other 409 codes: `SAMPLE_LIMIT_REACHED`, `SAMPLE_TOO_LARGE`, `TEST_LIMIT_REACHED`,
+     *     `TEST_SIZE_LIMIT_REACHED`, `VERSION_PUBLISHED`, `PROBLEM_ARCHIVED`. An id that is not a
+     *     testcase of this problem, a duplicate id or a file that was never uploaded is 400 with
+     *     one `details` entry per problem (field `tests[0].input` and the like).
+     */
+    put: operations['saveTestCases'];
+    /**
+     * Add a test at the end (owner, administrator or editor)
      * @description `multipart/form-data` with parts `input` and `output` (files) and optional `is_sample`
      *     (`true` or `false`). Both files are checked and normalised (see `TestCase`); the first
      *     problem found is reported in `details` with the field `input` or `output`, naming the
      *     file and the reason. Identical content is stored once. Only the draft can change.
      */
     post: operations['createTestCase'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check and store one file for a later save (owner, administrator or editor)
+     * @description Either `multipart/form-data` with the part `file`, or JSON `{ "text": "..." }` for pasted
+     *     text. The file is checked and normalised as described in `TestCase` and stored by its
+     *     SHA-256; the problem does not change until `saveTestCases` refers to the hash. Identical
+     *     content is stored once and a file nobody uses is simply left unreferenced. A file that is
+     *     binary, has a NUL, or is over 8 MiB is 400 with `details` field `file` naming the file.
+     *     Pasted text over 1 MiB is 413. Only while the draft is open (409 otherwise). Limited to
+     *     300 requests per minute.
+     */
+    post: operations['stageTestFile'];
     delete?: never;
     options?: never;
     head?: never;
@@ -707,7 +757,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Set the order of all tests (owner or editor)
+     * Set the order of all tests (owner, administrator or editor)
      * @description `test_ids` must list every test of the draft exactly once.
      */
     post: operations['reorderTestCases'];
@@ -726,20 +776,20 @@ export interface paths {
     };
     get?: never;
     /**
-     * Replace the files of a test (owner or editor)
+     * Replace the files of a test (owner, administrator or editor)
      * @description `multipart/form-data` with `input` and/or `output` (files). Whatever is sent replaces
      *     the current file; the position and `is_sample` stay.
      */
     put: operations['replaceTestCase'];
     post?: never;
     /**
-     * Remove a test (owner or editor)
+     * Remove a test (owner, administrator or editor)
      * @description The remaining tests keep their order and are renumbered.
      */
     delete: operations['deleteTestCase'];
     options?: never;
     head?: never;
-    /** Mark a test as a sample or hidden (owner or editor) */
+    /** Mark a test as a sample or hidden (owner, administrator or editor) */
     patch: operations['updateTestCase'];
     trace?: never;
   };
@@ -750,7 +800,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The input file of a test (owner or editor) */
+    /**
+     * The input file of a test (owner, administrator, editor, observer)
+     * @description Sent as an attachment; `inline=true` opens it as text instead.
+     */
     get: operations['downloadTestInput'];
     put?: never;
     post?: never;
@@ -767,10 +820,100 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The expected output file of a test (owner or editor) */
+    /**
+     * The expected output file of a test (owner, administrator, editor, observer)
+     * @description Sent as an attachment; `inline=true` opens it as text instead. 404 while the testcase has no expected output yet.
+     */
     get: operations['downloadTestOutput'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/files/{side}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A window of lines of a test's input or expected output (owner, administrator, editor, observer)
+     * @description For the preview (the first 10 lines) and "View all" (up to 1000 lines a window) of the
+     *     testcases page. 404 for `output` while the testcase has no expected output yet.
+     */
+    get: operations['getTestFileSlice'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create expected outputs by running a reference solution (owner, administrator or editor)
+     * @description Runs the saved solution on the inputs of the chosen testcases (all of them when
+     *     `test_ids` is left out), one Judge job per testcase, at most three at a time. Nothing in
+     *     the problem changes: each finished run offers its `output` as a hash that goes into
+     *     `saveTestCases` when the author accepts it. Answers 202 with the job; follow it with
+     *     `getGenerate`. One job at a time per problem (409 `GENERATE_RUNNING`); the job gives up
+     *     after 10 minutes. A solution or testcase that is not of this problem is 404 / 400.
+     */
+    post: operations['startGenerate'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Progress and results of a Generate job (owner, administrator, editor, observer)
+     * @description Poll it while `status` is `running`. Finished jobs are kept for 24 hours, so closing the
+     *     page does not lose the results.
+     */
+    get: operations['getGenerate'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}/stop': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop a Generate job (owner, administrator or editor)
+     * @description Keeps the runs that already finished. Stopping a job that is no longer running changes nothing.
+     */
+    post: operations['stopGenerate'];
     delete?: never;
     options?: never;
     head?: never;
@@ -785,13 +928,13 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Reference solutions of the draft (owner or editor)
+     * Reference solutions of the draft (owner, administrator, editor or observer)
      * @description Never sent to anyone else, in any endpoint.
      */
     get: operations['listReferenceSolutions'];
     put?: never;
     /**
-     * Attach a reference solution (owner or editor)
+     * Attach a reference solution (owner, administrator or editor)
      * @description The first solution becomes the primary one. Marking another as primary demotes the
      *     previous primary. At most `constraints.solutions.max_count` per version.
      */
@@ -813,13 +956,13 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Remove a reference solution (owner or editor)
+     * Remove a reference solution (owner, administrator or editor)
      * @description Removing the primary one leaves the version without a primary until another is chosen.
      */
     delete: operations['deleteReferenceSolution'];
     options?: never;
     head?: never;
-    /** Change a reference solution (owner or editor) */
+    /** Change a reference solution (owner, administrator or editor) */
     patch: operations['updateReferenceSolution'];
     trace?: never;
   };
@@ -833,7 +976,7 @@ export interface paths {
     /**
      * Submissions of a problem, newest first
      * @description `scope=mine` (default) lists the caller's own. `scope=all` lists everyone's and is for
-     *     owners and editors only (403 for others).
+     *     the staff only (owner, administrator, editor, observer; 403 for others).
      */
     get: operations['listSubmissions'];
     put?: never;
@@ -845,8 +988,167 @@ export interface paths {
      *     Answers 202 with the submission in status `queued` straight away; follow it with the
      *     events stream or by polling. If Judge is unavailable the submission is kept and handed
      *     over later. Limited to 10 submissions per minute per user (429 `RATE_LIMITED`).
+     *     `track` names the Track the solver is working in; it must reach the problem for this
+     *     person (400 with `details` field `track` otherwise). Left out, the first Track that
+     *     reaches the problem is used, and none when no Track does. Staff reach every active Track.
+     *     The Track is shown to staff in the Space-wide submission lists.
      */
     post: operations['createSubmission'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Every submission of a Space, filterable (owner, administrator, editor, observer)
+     * @description The Space-wide list for staff (GRD-93). Solvers, visitors and non-members get 403 / 404
+     *     as for any private part of the Space. `member` and `problem` are exact (case-insensitive)
+     *     username and problem slug; `q` searches the username, display name, problem slug and title.
+     *     `track` is a Track slug, or `none` for submissions made from no Track. `verdict` takes
+     *     several codes separated by commas (`AC,WA`). `from` and `to` bound the submission time.
+     *     An unknown Track is 404.
+     */
+    get: operations['listSpaceSubmissions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/versions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Problem versions that exist in the Space (owner, administrator, editor, observer)
+     * @description Feeds the version filter of the lists. `problem` limits it to one problem slug.
+     */
+    get: operations['listSubmissionVersions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/by-member': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Submissions rolled up per person (owner, administrator, editor, observer)
+     * @description One row per member, plus anyone who submitted to a public Space without joining it
+     *     (`role` is then null). `hide_empty` (default true) drops people with no submission in
+     *     the window. `role=none` keeps people without a role. `track` is a Track slug or `none`.
+     *     `window` limits the counted submissions to the last 7 or 30 days.
+     */
+    get: operations['listSubmissionsByMember'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/by-member/{username}/problems': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The problems one person tried (owner, administrator, editor, observer)
+     * @description Second page of "by member". 404 for a user who is neither a member nor has submitted
+     *     in this Space. The response carries the person's rollup as `member`.
+     */
+    get: operations['listMemberProblems'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/by-track': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Submissions rolled up per Track (owner, administrator, editor, observer)
+     * @description One row per active Track, not paged. `members` counts the solvers who can see the Track
+     *     (all solvers of the Space, or those added to it when it is members-only; the same people
+     *     as the Track's `progress/members`); `members_finished` counts those who solved every
+     *     published problem of the Track.
+     */
+    get: operations['listSubmissionsByTrack'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/by-track/{trackSlug}/problems': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The problems of a Track with how people got on (owner, administrator, editor, observer)
+     * @description Not paged. Drafts and archived problems of the Track are included (`status` filters
+     *     them), which solvers never see. `most_common_failure` is the most frequent failing
+     *     verdict and test of the problem within this Track. 404 for an unknown Track.
+     */
+    get: operations['listTrackSubmissionProblems'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/submissions/by-problem': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Submissions rolled up per problem (owner, administrator, editor, observer)
+     * @description `track` is a Track slug, or `none` for problems that sit in no active Track.
+     *     `status` filters the problem status.
+     */
+    get: operations['listSubmissionsByProblem'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -862,11 +1164,36 @@ export interface paths {
     };
     /**
      * One submission with its source and per-test results
-     * @description Visible to its author, and to owners and editors of the Space (decision log, GRD-46).
+     * @description Visible to its author, and to owners, administrators, editors and observers of the Space (decision log, GRD-46).
      *     Anyone else gets 404. Results never contain the content of a hidden test; previews
      *     exist for sample tests only.
      */
     get: operations['getSubmission'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/submissions/{submissionId}/tests/{position}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One test of a submission, hidden tests included (owner, administrator, editor, observer)
+     * @description The input, the expected output, what the program printed and its standard error, as
+     *     windows of lines. Only people who may read hidden tests reach it; anyone else, the author
+     *     included, gets 404 (the author reads samples in `getSubmission`). Core asks Judge to keep
+     *     the start of each test's output (64 KiB of stdout and 8 KiB of stderr), so `output` and
+     *     `stderr` can be `cut`. Use `part` to fetch one of the four, the others are then null.
+     *     `input` or `expected` that cannot be read are `unavailable`.
+     */
+    get: operations['getSubmissionTest'];
     put?: never;
     post?: never;
     delete?: never;
@@ -911,8 +1238,8 @@ export interface paths {
     put?: never;
     /**
      * Check a submission again after a system error
-     * @description Only when the verdict is `ISE` (never the submitter's fault). The author or an owner
-     *     or editor of the Space can do it. Anything else is 409.
+     * @description Only when the verdict is `ISE` (never the submitter's fault). The author or an owner,
+     *     administrator or editor of the Space can do it (observers cannot). Anything else is 409.
      */
     post: operations['rejudgeSubmission'];
     delete?: never;
@@ -930,13 +1257,13 @@ export interface paths {
     };
     /**
      * The Tracks the caller can see, in order
-     * @description Owners and editors see every Track, archived ones last. Everyone else (solvers, outsiders of a public Space,
+     * @description The staff (owner, administrator, editor, observer) see every Track, archived ones last. Everyone else (solvers, outsiders of a public Space,
      *     visitors) sees Tracks that are not archived and are either open to the Space or have them as a member.
      *     `progress` is null for visitors.
      */
     get: operations['listTracks'];
     put?: never;
-    /** Create a Track (owner or editor) */
+    /** Create a Track (owner, administrator or editor) */
     post: operations['createTrack'];
     delete?: never;
     options?: never;
@@ -954,7 +1281,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Set the order of all active Tracks (owner or editor)
+     * Set the order of all active Tracks (owner, administrator or editor)
      * @description `track_ids` must list every active (not archived) Track exactly once, otherwise 409 `ORDER_MISMATCH` and nothing changes.
      */
     post: operations['reorderTracks'];
@@ -974,7 +1301,7 @@ export interface paths {
     /**
      * A Track with its Collections and problems, in order
      * @description 404 when the Track is archived or members-only and the caller may not see it, like a missing one.
-     *     Solvers get published problems only; owners and editors also get drafts and archived problems with their `status`.
+     *     Solvers get published problems only; the staff also get drafts and archived problems with their `status`.
      *     Each problem carries the caller's `solved` and `my_verdict`; both are null for visitors.
      */
     get: operations['getTrack'];
@@ -983,7 +1310,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Change name, slug, description or privacy (owner or editor) */
+    /** Change name, slug, description or visibility (owner, administrator or editor) */
     patch: operations['updateTrack'];
     trace?: never;
   };
@@ -997,7 +1324,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Archive a Track (owner or editor)
+     * Archive a Track (owner, administrator or editor)
      * @description Hides the Track from solvers. Its Collections and problems stay where they are.
      */
     post: operations['archiveTrack'];
@@ -1016,7 +1343,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Restore an archived Track to the end of the order (owner or editor) */
+    /** Restore an archived Track to the end of the order (owner, administrator or editor) */
     post: operations['restoreTrack'];
     delete?: never;
     options?: never;
@@ -1034,7 +1361,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Put Collections in a Track (owner or editor)
+     * Put Collections in a Track (owner, administrator or editor)
      * @description Several at once, appended in the order given. Ones already there are ignored. A Collection can sit in many Tracks.
      */
     post: operations['addCollectionsToTrack'];
@@ -1054,7 +1381,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Take Collections out of a Track (owner or editor)
+     * Take Collections out of a Track (owner, administrator or editor)
      * @description The Collections themselves stay in the Space and in their other Tracks.
      */
     post: operations['removeCollectionsFromTrack'];
@@ -1074,7 +1401,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Set the order of the Collections in a Track (owner or editor)
+     * Set the order of the Collections in a Track (owner, administrator or editor)
      * @description `collection_ids` must list every Collection of the Track exactly once, otherwise 409 `ORDER_MISMATCH`.
      */
     post: operations['reorderCollectionsInTrack'];
@@ -1091,7 +1418,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** People added to a Track (owner or editor) */
+    /** People added to a Track (owner, administrator or editor) */
     get: operations['listTrackMembers'];
     put?: never;
     post?: never;
@@ -1112,7 +1439,7 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Remove someone from a Track (owner or editor)
+     * Remove someone from a Track (owner, administrator or editor)
      * @description They stay a member of the Space. Recorded in the audit log.
      */
     delete: operations['removeTrackMember'];
@@ -1128,11 +1455,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Pending, unexpired invitations to a Track (owner or editor) */
+    /** Pending, unexpired invitations to a Track (owner, administrator or editor) */
     get: operations['listTrackInvites'];
     put?: never;
     /**
-     * Invite someone to a Track, by link or by username (owner or editor)
+     * Invite someone to a Track, by link or by username (owner, administrator or editor)
      * @description Without `username` the result carries a `link` that anyone logged in can use once; with `username` only that user can answer.
      *     The invitation always gives a solver seat in the Space (someone already in the Space keeps their role). Answered through
      *     `/api/v1/invites/{token}` and `/api/v1/me/invites`, like Space invitations. The `token` is returned once. Recorded in the audit log.
@@ -1154,7 +1481,7 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Revoke a pending Track invitation (owner or editor) */
+    /** Revoke a pending Track invitation (owner, administrator or editor) */
     delete: operations['revokeTrackInvite'];
     options?: never;
     head?: never;
@@ -1169,7 +1496,7 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Progress in a Track (mine, or a member's for owners and editors)
+     * Progress in a Track (mine, or a member's for the staff)
      * @description A problem counts as passed after at least one AC, on any version. Only published problems count, and a problem
      *     taken out of a Collection or Track leaves the denominator.
      */
@@ -1189,7 +1516,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Progress of every solver who can see the Track (owner or editor) */
+    /** Progress of every solver who can see the Track (owner, administrator, editor, observer) */
     get: operations['listTrackMemberProgress'];
     put?: never;
     post?: never;
@@ -1206,10 +1533,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Every Collection of the Space, in a Track or not (owner or editor) */
+    /** Every Collection of the Space, in a Track or not (owner, administrator or editor) */
     get: operations['listCollections'];
     put?: never;
-    /** Create a Collection, optionally in Tracks (owner or editor) */
+    /** Create a Collection, optionally in Tracks (owner, administrator or editor) */
     post: operations['createCollection'];
     delete?: never;
     options?: never;
@@ -1226,7 +1553,7 @@ export interface paths {
     };
     /**
      * A Collection with its problems
-     * @description Owners and editors always. Everyone else only when it is not archived and sits in a Track they can see, otherwise 404. Solvers get published problems only.
+     * @description The staff always. Everyone else only when it is not archived and sits in a Track they can see, otherwise 404. Solvers get published problems only.
      */
     get: operations['getCollection'];
     put?: never;
@@ -1234,7 +1561,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Change name, slug or description (owner or editor) */
+    /** Change name, slug or description (owner, administrator or editor) */
     patch: operations['updateCollection'];
     trace?: never;
   };
@@ -1247,7 +1574,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Archive a Collection (owner or editor) */
+    /** Archive a Collection (owner, administrator or editor) */
     post: operations['archiveCollection'];
     delete?: never;
     options?: never;
@@ -1264,7 +1591,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Restore an archived Collection (owner or editor) */
+    /** Restore an archived Collection (owner, administrator or editor) */
     post: operations['restoreCollection'];
     delete?: never;
     options?: never;
@@ -1282,7 +1609,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Add problems to a Collection (owner or editor)
+     * Add problems to a Collection (owner, administrator or editor)
      * @description Several at once, appended in the order given. Drafts can be added; solvers do not see them until they are published. A problem can be in many Collections.
      */
     post: operations['addProblemsToCollection'];
@@ -1302,7 +1629,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Take problems out of a Collection (owner or editor)
+     * Take problems out of a Collection (owner, administrator or editor)
      * @description The problems themselves are not deleted.
      */
     post: operations['removeProblemsFromCollection'];
@@ -1322,7 +1649,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Set the order of the problems in a Collection (owner or editor)
+     * Set the order of the problems in a Collection (owner, administrator or editor)
      * @description `problem_ids` must list every problem of the Collection exactly once, otherwise 409 `ORDER_MISMATCH`.
      */
     post: operations['reorderProblemsInCollection'];
@@ -1338,8 +1665,13 @@ export interface components {
   schemas: {
     /** @enum {string} */
     OAuthProvider: 'github' | 'google';
-    /** @enum {string} */
-    Role: 'owner' | 'editor' | 'solver';
+    /**
+     * @description Strongest first: owner > administrator > editor > observer > solver. A visitor or
+     *     a signed-in non-member is a "viewer" and has no stored role (`my_role` is null).
+     *     Exactly one owner per Space.
+     * @enum {string}
+     */
+    Role: 'owner' | 'administrator' | 'editor' | 'observer' | 'solver';
     /** @description The account owner's view. Other users never see `id` or `email`. */
     Me: {
       /** Format: uuid */
@@ -1413,8 +1745,11 @@ export interface components {
       joined_at: string;
     };
     CreateInviteRequest: {
-      /** @enum {string} */
-      role: 'editor' | 'solver';
+      /**
+       * @description An administrator can only invite editor, observer or solver.
+       * @enum {string}
+       */
+      role: 'administrator' | 'editor' | 'observer' | 'solver';
       /** @description Address the invitation to one user. Omit for a link invitation. */
       username?: string;
       /** @default 7 */
@@ -1427,8 +1762,7 @@ export interface components {
         name: string;
         slug: string;
       };
-      /** @enum {string} */
-      role: 'editor' | 'solver';
+      role: components['schemas']['Role'];
       /** @enum {string} */
       status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
       /** Format: date-time */
@@ -1641,9 +1975,12 @@ export interface components {
     };
     PublishCheck: {
       /** @enum {string} */
-      key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'solution';
+      key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'outputs' | 'solution';
       ok: boolean;
-      /** @description What is needed (when not ok) or what is in place (when ok) */
+      /**
+       * @description What is needed (when not ok) or what is in place (when ok). `outputs` is not ok while a
+       *     testcase has no expected output: upload one or generate it from a solution
+       */
       message: string;
     };
     ProblemEditor: {
@@ -1681,13 +2018,16 @@ export interface components {
     TestSummary: {
       count: number;
       sample_count: number;
+      /** @description Testcases still waiting for an expected output */
+      missing_output_count: number;
       total_bytes: number;
     };
     /**
      * @description Input and expected output are stored as UTF-8 text, normalised on upload: a leading byte order mark is
      *     removed, CRLF and lone CR become LF, trailing blank lines are removed and a non-empty file ends with
      *     exactly one LF. Binary files (NUL or other control characters, invalid UTF-8) are refused.
-     *     The SHA-256 and sizes are of the normalised content.
+     *     The SHA-256 and sizes are of the normalised content. A testcase created on the testcases page
+     *     can have no expected output yet (`output_sha256` and `output_size_bytes` null).
      */
     TestCase: {
       /** Format: uuid */
@@ -1696,9 +2036,10 @@ export interface components {
       position: number;
       is_sample: boolean;
       input_sha256: string;
-      output_sha256: string;
+      /** @description Null while the expected output is still to be uploaded or generated */
+      output_sha256: string | null;
       input_size_bytes: number;
-      output_size_bytes: number;
+      output_size_bytes: number | null;
       /** Format: date-time */
       created_at: string;
     };
@@ -1707,6 +2048,11 @@ export interface components {
       summary: components['schemas']['TestSummary'];
       limits: components['schemas']['TestLimits'];
       editable: boolean;
+      /**
+       * @description Changes whenever the order, files or visibility of the testcases do. Send it with
+       *     `saveTestCases`; if the testcases changed meanwhile the save is 409 `TESTS_CHANGED`
+       */
+      revision: string;
     };
     ReferenceSolution: {
       /** Format: uuid */
@@ -1736,6 +2082,8 @@ export interface components {
       language: components['schemas']['Language'];
       /** @description UTF-8, at most 65536 bytes */
       source: string;
+      /** @description Slug of the Track the solver is working in; the first Track that reaches the problem when left out */
+      track?: string;
     };
     SubmissionSummary: {
       /** Format: uuid */
@@ -1825,7 +2173,7 @@ export interface components {
     };
     CollectionDetail: components['schemas']['Collection'] & {
       problems: components['schemas']['TrackProblem'][];
-      /** @description The Tracks it sits in; owners and editors only (null for others) */
+      /** @description The Tracks it sits in; owners, administrators and editors only (null for others) */
       tracks:
         | {
             /** Format: uuid */
@@ -1848,7 +2196,7 @@ export interface components {
     };
     /**
      * @description `space`: everyone who can see the Space sees the Track. `members`: only people added to it.
-     *     Owners and editors always see every Track.
+     *     The staff always see every Track.
      * @enum {string}
      */
     TrackVisibility: 'space' | 'members';
@@ -1991,6 +2339,290 @@ export interface components {
       field: string;
       message: string;
     };
+    SubmissionTestDetail: {
+      /** Format: uuid */
+      submission_id: string;
+      position: number;
+      verdict: components['schemas']['TestVerdict'];
+      is_sample: boolean;
+      time_ms: number;
+      memory_kb: number;
+      exit_code: number | null;
+      signal: number | null;
+      /** @description Null when `part` asked for another part */
+      input: components['schemas']['SubmissionFilePart'] | null;
+      /** @description Null when `part` asked for another part. A test without an expected output is `unavailable` */
+      expected: components['schemas']['SubmissionFilePart'] | null;
+      /** @description What the program printed; null when `part` asked for another part or Judge sent none */
+      output: components['schemas']['SubmissionFilePart'] | null;
+      /** @description Null when `part` asked for another part or Judge sent none */
+      stderr: components['schemas']['SubmissionFilePart'] | null;
+    };
+    SubmissionFilePart: components['schemas']['TextSlice'] & {
+      /** @description What was kept of the program's output is shorter than what it printed */
+      cut: boolean;
+      /** @description The file could not be read (never stored, or removed); `lines` is empty */
+      unavailable?: boolean;
+    };
+    /** @description A window of lines of a text, with the totals needed to say "showing 10 of 4,203 lines". */
+    TextSlice: {
+      /** @description The lines of the window without their line breaks (CR before LF dropped) */
+      lines: string[];
+      /** @description 1-based number of the first line in `lines`; `total_lines + 1` when past the end */
+      from_line: number;
+      /** @description 1-based number of the last line in `lines`; `from_line - 1` when the window is empty */
+      to_line: number;
+      /** @description Lines in the whole text; a last line without a line break counts */
+      total_lines: number;
+      size_bytes: number;
+      /** @description A line of the window was longer than 10000 characters and was cut */
+      line_truncated: boolean;
+    };
+    SaveTestCasesRequest: {
+      /** @description The `revision` of the list the changes started from */
+      revision?: string;
+      /** @description The testcases the problem should have afterwards, in order; those not listed are removed */
+      tests: components['schemas']['SaveTestCaseItem'][];
+    };
+    SaveTestCaseItem: {
+      /**
+       * Format: uuid
+       * @description An existing testcase of this problem; left out for a new one
+       */
+      id?: string;
+      is_sample: boolean;
+      input?: components['schemas']['TestFileRef'];
+      output?: components['schemas']['TestFileRef'];
+    };
+    TestFileRef: {
+      sha256: string;
+    };
+    StagedFile: {
+      /** @description Of the normalised content; what `saveTestCases` refers to */
+      sha256: string;
+      size_bytes: number;
+      total_lines: number;
+    };
+    SpaceSubmissionPage: {
+      items: components['schemas']['SpaceSubmissionRow'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    SpaceSubmissionRow: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      created_at: string;
+      member: components['schemas']['PublicUser'];
+      problem: {
+        slug: string;
+        /** @description Title of the version that was judged */
+        title: string;
+      };
+      /** @description The Track the submission was made from; null when none reached the problem */
+      track: components['schemas']['TrackRef'] | null;
+      /** @description Number of the problem version that was judged */
+      version: number;
+      language: components['schemas']['Language'];
+      status: components['schemas']['SubmissionStatus'];
+      verdict: components['schemas']['Verdict'] | null;
+      tests_passed: number | null;
+      tests_total: number | null;
+      time_ms: number | null;
+      memory_kb: number | null;
+    };
+    TrackRef: {
+      name: string;
+      slug: string;
+    };
+    TrackSubmissionProblems: {
+      track: {
+        name: string;
+        slug: string;
+        visibility: components['schemas']['TrackVisibility'];
+        collections: number;
+        problems: number;
+        members: number;
+        submissions: number;
+        accepted: number;
+        /** @description Solvers who can see the Track and solved every published problem of it */
+        finished: number;
+      };
+      /** @description Active Collections of the Track, for the collection filter */
+      collections: components['schemas']['TrackRef'][];
+      items: components['schemas']['TrackProblemRollup'][];
+    };
+    TrackProblemRollup: {
+      problem: components['schemas']['SubmissionProblemRef'];
+      /** @description The Collections of the Track that hold the problem */
+      collections: components['schemas']['TrackRef'][];
+      /** @description People who submitted */
+      tried: number;
+      /** @description People who solved it */
+      solved: number;
+      submissions: number;
+      most_common_failure: components['schemas']['FailureMode'] | null;
+      /** Format: date-time */
+      last_submission_at: string | null;
+    };
+    FailureMode: {
+      verdict: components['schemas']['Verdict'];
+      /** @description The first test that failed (1-based); null for a compilation error */
+      test_position: number | null;
+      count: number;
+    };
+    SubmissionProblemRef: {
+      slug: string;
+      title: string;
+      status: components['schemas']['ProblemStatus'];
+    };
+    StartGenerateRequest: {
+      /**
+       * Format: uuid
+       * @description A reference solution of this problem
+       */
+      solution_id: string;
+      /** @description Testcases to run, each once; the others keep what they have. All of them when left out */
+      test_ids?: string[];
+    };
+    ProblemRollupPage: {
+      items: components['schemas']['ProblemRollup'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    ProblemRollup: {
+      problem: components['schemas']['SubmissionProblemRef'];
+      /** @description Active Tracks that reach the problem, in Track order */
+      tracks: components['schemas']['TrackRef'][];
+      tried: number;
+      solved: number;
+      submissions: number;
+      last_verdict: components['schemas']['Verdict'] | null;
+      /** Format: date-time */
+      last_submission_at: string | null;
+    };
+    StageTextRequest: {
+      /** @description At most 1 MiB and no NUL character */
+      text: string;
+    };
+    TrackRollup: {
+      track: {
+        name: string;
+        slug: string;
+        visibility: components['schemas']['TrackVisibility'];
+        is_default: boolean;
+      };
+      /** @description Published problems in the Track */
+      problems: number;
+      /** @description Solvers who can see the Track */
+      members: number;
+      submissions: number;
+      accepted: number;
+      /** @description Solvers who can see the Track and solved every published problem of it */
+      members_finished: number;
+      /** Format: date-time */
+      last_submission_at: string | null;
+    };
+    GenerateJob: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {string} */
+      status: 'running' | 'completed' | 'stopped' | 'timed_out' | 'failed';
+      /** @description Set when the job failed as a whole, e.g. `COMPILE_ERROR` when the solution does not compile */
+      error: {
+        code: string;
+        message: string;
+      } | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      deadline_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      progress: {
+        total: number;
+        done: number;
+        failed: number;
+      };
+      /** @description In testcase order */
+      runs: components['schemas']['GenerateRun'][];
+    };
+    GenerateRun: {
+      /** Format: uuid */
+      test_id: string;
+      position: number;
+      /** @enum {string} */
+      status: 'queued' | 'running' | 'done' | 'failed';
+      /** @description Why a run failed, one of TLE, MLE, RE, OLE, ISE */
+      verdict: string | null;
+      /** @description e.g. `COMPILE_ERROR`, `NO_OUTPUT` or `JUDGE_UNAVAILABLE` */
+      error_code: string | null;
+      time_ms: number | null;
+      memory_kb: number | null;
+      /** @description The start of the standard error (at most 1000 characters) */
+      stderr: string | null;
+      /** @description The generated expected output, ready to be put in `saveTestCases` */
+      output: {
+        sha256: string;
+        size_bytes: number;
+      } | null;
+      /**
+       * @description The output equals the testcase's current expected output as Judge compares (trailing
+       *     spaces and trailing blank lines do not count); null when there is nothing to compare
+       */
+      same_as_current: boolean | null;
+    };
+    TestFileSlice: components['schemas']['TextSlice'] & {
+      /** @description Position of the testcase */
+      position: number;
+      /** @enum {string} */
+      side: 'input' | 'output';
+    };
+    MemberProblemPage: {
+      items: components['schemas']['MemberProblem'][];
+      page: number;
+      page_size: number;
+      total: number;
+      member: components['schemas']['MemberRollup'];
+    };
+    MemberProblem: {
+      problem: components['schemas']['SubmissionProblemRef'];
+      /** @description The Track of the person's latest submission of the problem */
+      track: components['schemas']['TrackRef'] | null;
+      attempts: number;
+      solved: boolean;
+      best_verdict: components['schemas']['Verdict'] | null;
+      last_verdict: components['schemas']['Verdict'] | null;
+      /** Format: date-time */
+      last_submission_at: string | null;
+    };
+    MemberRollup: {
+      user: components['schemas']['PublicUser'];
+      /** @description Null for someone who submitted without being a member */
+      role: components['schemas']['Role'] | null;
+      /** @description Problems tried */
+      attempted: number;
+      solved: number;
+      submissions: number;
+      /** @description Accepted submissions out of all of them, 0 to 1; null when there are none */
+      ac_rate: number | null;
+      last_verdict: components['schemas']['Verdict'] | null;
+      /** Format: date-time */
+      last_submission_at: string | null;
+    };
+    MemberRollupPage: {
+      items: components['schemas']['MemberRollup'][];
+      page: number;
+      page_size: number;
+      total: number;
+      /** @description Over every row that matches the filters, not only this page */
+      totals: {
+        members: number;
+        submissions: number;
+      };
+    };
   };
   responses: {
     /** @description Standard error response */
@@ -2012,7 +2644,7 @@ export interface components {
     TrackSlug: string;
     /** @description Collection slug (case-insensitive), unique inside its Space */
     CollectionSlug: string;
-    /** @description Whose progress; defaults to the caller. Only owners and editors may name someone else. */
+    /** @description Whose progress; defaults to the caller. Only the staff (observers too) may name someone else. */
     ProgressUsername: string;
     InviteId: string;
     InviteToken: string;
@@ -2025,6 +2657,13 @@ export interface components {
     TestId: string;
     SolutionId: string;
     SubmissionId: string;
+    /** @description Count only submissions of the last 7 or 30 days */
+    SubmissionWindow: 'any' | '7d' | '30d';
+    /** @description 1-based number of the first line of the window */
+    FromLine: number;
+    /** @description Lines in the window */
+    MaxLines: number;
+    JobId: string;
   };
   requestBodies: never;
   headers: never;
@@ -2775,9 +3414,9 @@ export interface operations {
         page_size?: components['parameters']['PageSize'];
         /** @description Case-insensitive search in the title and the slug */
         q?: string;
-        /** @description Owners and editors only; ignored for everyone else */
+        /** @description Staff only (owner, administrator, editor, observer); ignored for everyone else */
         status?: 'published' | 'draft' | 'archived' | 'all';
-        /** @description Owners and editors only; only problems I created */
+        /** @description Staff only; only problems I created */
         mine?: boolean;
       };
       header?: never;
@@ -3162,6 +3801,40 @@ export interface operations {
       404: components['responses']['Error'];
     };
   };
+  saveTestCases: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveTestCasesRequest'];
+      };
+    };
+    responses: {
+      /** @description The saved testcases, with the new revision */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCaseList'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
   createTestCase: {
     parameters: {
       query?: never;
@@ -3201,6 +3874,46 @@ export interface operations {
       403: components['responses']['Error'];
       404: components['responses']['Error'];
       409: components['responses']['Error'];
+    };
+  };
+  stageTestFile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+        };
+        'application/json': components['schemas']['StageTextRequest'];
+      };
+    };
+    responses: {
+      /** @description Stored */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StagedFile'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      413: components['responses']['Error'];
+      429: components['responses']['Error'];
     };
   };
   reorderTestCases: {
@@ -3346,7 +4059,9 @@ export interface operations {
   };
   downloadTestInput: {
     parameters: {
-      query?: never;
+      query?: {
+        inline?: 'true' | 'false';
+      };
       header?: never;
       path: {
         /** @description Space slug (case-insensitive) */
@@ -3375,7 +4090,9 @@ export interface operations {
   };
   downloadTestOutput: {
     parameters: {
-      query?: never;
+      query?: {
+        inline?: 'true' | 'false';
+      };
       header?: never;
       path: {
         /** @description Space slug (case-insensitive) */
@@ -3397,6 +4114,137 @@ export interface operations {
           'text/plain': string;
         };
       };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  getTestFileSlice: {
+    parameters: {
+      query?: {
+        /** @description 1-based number of the first line of the window */
+        from_line?: components['parameters']['FromLine'];
+        /** @description Lines in the window */
+        max_lines?: components['parameters']['MaxLines'];
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+        side: 'input' | 'output';
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The window */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestFileSlice'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      503: components['responses']['Error'];
+    };
+  };
+  startGenerate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartGenerateRequest'];
+      };
+    };
+    responses: {
+      /** @description Started */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GenerateJob'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getGenerate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        jobId: components['parameters']['JobId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The job */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GenerateJob'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  stopGenerate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        jobId: components['parameters']['JobId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The job as it is now */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GenerateJob'];
+        };
+      };
+      400: components['responses']['Error'];
       401: components['responses']['Error'];
       403: components['responses']['Error'];
       404: components['responses']['Error'];
@@ -3597,6 +4445,265 @@ export interface operations {
       429: components['responses']['Error'];
     };
   };
+  listSpaceSubmissions: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Username of the author */
+        member?: string;
+        q?: string;
+        /** @description Problem slug */
+        problem?: string;
+        /** @description Track slug, or `none` */
+        track?: string;
+        /** @description Comma-separated verdict codes, e.g. `AC,WA` */
+        verdict?: string;
+        language?: components['schemas']['Language'];
+        /** @description Problem version number */
+        version?: number;
+        from?: string;
+        to?: string;
+        sort?: 'newest' | 'oldest' | 'member' | 'tests_passed' | 'time';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of submissions */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SpaceSubmissionPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listSubmissionVersions: {
+    parameters: {
+      query?: {
+        /** @description Problem slug */
+        problem?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Version numbers, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: number[];
+          };
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listSubmissionsByMember: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Search in the username and display name */
+        q?: string;
+        role?: 'owner' | 'administrator' | 'editor' | 'observer' | 'solver' | 'none';
+        track?: string;
+        /** @description Count only submissions of the last 7 or 30 days */
+        window?: components['parameters']['SubmissionWindow'];
+        sort?: 'last_submission' | 'solved' | 'name';
+        hide_empty?: 'true' | 'false';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of member rollups */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberRollupPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listMemberProblems: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Search in the problem slug and title */
+        q?: string;
+        /** @description Track slug, or `none` */
+        track?: string;
+        status?: 'all' | 'solved' | 'unsolved';
+        sort?: 'last_submission' | 'attempts' | 'name';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of problems with the person's results */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MemberProblemPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listSubmissionsByTrack: {
+    parameters: {
+      query?: {
+        /** @description Search in the Track name and slug */
+        q?: string;
+        visibility?: components['schemas']['TrackVisibility'];
+        /** @description Count only submissions of the last 7 or 30 days */
+        window?: components['parameters']['SubmissionWindow'];
+        sort?: 'track_order' | 'last_submission' | 'submissions';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Tracks with their numbers */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['TrackRollup'][];
+          };
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listTrackSubmissionProblems: {
+    parameters: {
+      query?: {
+        /** @description Search in the problem slug and title */
+        q?: string;
+        /** @description Collection slug */
+        collection?: string;
+        status?: 'all' | 'published' | 'draft' | 'archived';
+        sort?: 'track_order' | 'solved_fewest' | 'last_submission';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug (case-insensitive), unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Track and its problems */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrackSubmissionProblems'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listSubmissionsByProblem: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Search in the problem slug and title */
+        q?: string;
+        track?: string;
+        status?: 'all' | 'published' | 'draft' | 'archived';
+        sort?: 'last_submission' | 'submissions' | 'solved_fewest' | 'name';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of problem rollups */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemRollupPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
   getSubmission: {
     parameters: {
       query?: never;
@@ -3619,6 +4726,40 @@ export interface operations {
       };
       401: components['responses']['Error'];
       404: components['responses']['Error'];
+    };
+  };
+  getSubmissionTest: {
+    parameters: {
+      query?: {
+        part?: 'input' | 'expected' | 'output' | 'stderr';
+        /** @description 1-based number of the first line of the window */
+        from_line?: components['parameters']['FromLine'];
+        /** @description Lines in the window */
+        max_lines?: components['parameters']['MaxLines'];
+      };
+      header?: never;
+      path: {
+        submissionId: components['parameters']['SubmissionId'];
+        /** @description 1-based position of the test in the judging order */
+        position: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The test with its windows of text */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SubmissionTestDetail'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      503: components['responses']['Error'];
     };
   };
   streamSubmission: {
@@ -4125,7 +5266,7 @@ export interface operations {
   getTrackProgress: {
     parameters: {
       query?: {
-        /** @description Whose progress; defaults to the caller. Only owners and editors may name someone else. */
+        /** @description Whose progress; defaults to the caller. Only the staff (observers too) may name someone else. */
         username?: components['parameters']['ProgressUsername'];
       };
       header?: never;
