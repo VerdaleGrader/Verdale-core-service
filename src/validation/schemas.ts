@@ -299,3 +299,47 @@ export const statementPdfQuery = z.object({
     .default('false')
     .transform((value) => value === 'true'),
 });
+
+// --- Testcases page: staged files, one save, preview, generate (M3: GRD-108) ---
+
+const sha256Ref = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Not a file hash.') });
+
+/** Pasted text becomes a staged file; the body limit (1 MiB) keeps pasting for small testcases. */
+export const stageTextBody = z.object({
+  text: z
+    .string()
+    .max(1024 * 1024, 'Use Upload files for anything over 1 MiB.')
+    .refine((value) => !value.includes('\u0000'), 'Remove the NUL character (U+0000).'),
+});
+
+export const batchTestsBody = z.object({
+  revision: z.string().min(1).max(64).optional(),
+  tests: z
+    .array(
+      z.object({
+        id: z.uuid().optional(),
+        is_sample: z.boolean(),
+        input: sha256Ref.optional(),
+        output: sha256Ref.optional(),
+      })
+    )
+    .max(500),
+});
+
+export const testFileParams = testParams.extend({ side: z.enum(['input', 'output']) });
+
+export const fileSliceQuery = z.object({
+  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
+  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
+  inline: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+
+export const generateBody = z.object({
+  solution_id: z.uuid(),
+  test_ids: z.array(z.uuid()).min(1).max(500).optional(),
+});
+
+export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });

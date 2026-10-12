@@ -164,9 +164,10 @@ export interface TestCaseDto {
   position: number;
   is_sample: boolean;
   input_sha256: string;
-  output_sha256: string;
+  /** Null while the expected output is still to be created (paste without one, or generate it). */
+  output_sha256: string | null;
   input_size_bytes: number;
-  output_size_bytes: number;
+  output_size_bytes: number | null;
   created_at: string;
 }
 
@@ -186,5 +187,7 @@ export function toTestCaseDto(test: TestCase): TestCaseDto {
 export interface TestSummaryDto {
   count: number;
   sample_count: number;
+  /** Testcases still waiting for an expected output (paste without one, or to generate). */
+  missing_output_count: number;
   total_bytes: number;
 }

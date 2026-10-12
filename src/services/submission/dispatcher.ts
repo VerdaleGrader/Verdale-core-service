@@ -74,7 +74,8 @@ export default class JudgeDispatcher {
       this.problems.findVersion(this.prisma, submission.problem_version_id),
       this.tests.listByVersion(this.prisma, submission.problem_version_id),
     ]);
-    if (!version || tests.length === 0) {
+    // A published version has an output for every test (the database insists); never send half a job.
+    if (!version || tests.length === 0 || tests.some((test) => !test.output_sha256)) {
       await this.giveUp(submissionId, 'JOB_INVALID');
       logger.error({ message: 'submission has no version or no tests', data: { submissionId } });
       return;
@@ -97,7 +98,7 @@ export default class JudgeDispatcher {
       tests: tests.map((test) => ({
         id: test.id,
         input: { sha256: test.input_sha256, size_bytes: test.input_size_bytes },
-        output: { sha256: test.output_sha256, size_bytes: test.output_size_bytes },
+        output: { sha256: test.output_sha256!, size_bytes: test.output_size_bytes! },
         sample: test.is_sample,
       })),
       callback_url: this.options.callbackUrl,

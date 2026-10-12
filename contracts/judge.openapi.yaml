@@ -199,7 +199,12 @@ components:
       description: |
         `submission` stops at the first test that is not AC (remaining tests
         are SKIPPED). `verify` runs every test (used by the publish gate).
-      enum: [submission, verify]
+        `generate` runs every test input through the program and reports what it
+        printed (it needs `capture.stdout_bytes`); the expected output is not
+        compared, so `tests[].output` may be left out. A test whose output is
+        larger than `capture.stdout_bytes` is reported as OLE (the output would be
+        incomplete). Used to create expected outputs from a reference solution.
+      enum: [submission, verify, generate]
     Checker:
       type: string
       description: Output checker. `line` ignores trailing whitespace on each line and trailing blank lines.
@@ -280,7 +285,7 @@ components:
           description: Budget for all captured text of the job.
     TestCase:
       type: object
-      required: [id, input, output]
+      required: [id, input]
       properties:
         id:
           type: string
@@ -291,6 +296,7 @@ components:
           $ref: '#/components/schemas/TestFile'
         output:
           $ref: '#/components/schemas/TestFile'
+          description: The expected output. Required for `submission` and `verify`; ignored for `generate`.
         sample:
           type: boolean
           default: false

@@ -117,9 +117,14 @@ export interface components {
     /**
      * @description `submission` stops at the first test that is not AC (remaining tests
      *     are SKIPPED). `verify` runs every test (used by the publish gate).
+     *     `generate` runs every test input through the program and reports what it
+     *     printed (it needs `capture.stdout_bytes`); the expected output is not
+     *     compared, so `tests[].output` may be left out. A test whose output is
+     *     larger than `capture.stdout_bytes` is reported as OLE (the output would be
+     *     incomplete). Used to create expected outputs from a reference solution.
      * @enum {string}
      */
-    JobKind: 'submission' | 'verify';
+    JobKind: 'submission' | 'verify' | 'generate';
     /**
      * @description Output checker. `line` ignores trailing whitespace on each line and trailing blank lines.
      * @enum {string}
@@ -181,7 +186,8 @@ export interface components {
     TestCase: {
       id: string;
       input: components['schemas']['TestFile'];
-      output: components['schemas']['TestFile'];
+      /** @description The expected output. Required for `submission` and `verify`; ignored for `generate`. */
+      output?: components['schemas']['TestFile'];
       /**
        * @description Sample tests are visible to solvers. Only for sample tests does the
        *     result carry `stdout_preview` and `checker_message`, unless the job

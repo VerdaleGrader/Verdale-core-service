@@ -1,5 +1,5 @@
 export interface PublishCheck {
-  key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'solution';
+  key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'outputs' | 'solution';
   ok: boolean;
   message: string;
 }
@@ -12,6 +12,8 @@ export interface PublishFacts {
   languageCount: number;
   testCount: number;
   sampleCount: number;
+  /** Testcases without an expected output. */
+  missingOutputCount: number;
   hasPrimarySolution: boolean;
 }
 
@@ -47,15 +49,25 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
       key: 'tests',
       ok: facts.testCount >= 1,
       message:
-        facts.testCount >= 1 ? `${facts.testCount} test(s) added.` : 'Add at least one test.',
+        facts.testCount >= 1
+          ? `${facts.testCount} testcase(s) added.`
+          : 'Add at least one testcase.',
+    },
+    {
+      key: 'outputs',
+      ok: facts.missingOutputCount === 0,
+      message:
+        facts.missingOutputCount === 0
+          ? 'Every testcase has an expected output.'
+          : `${facts.missingOutputCount} testcase(s) have no expected output yet. Upload one or generate it from a solution.`,
     },
     {
       key: 'sample_test',
       ok: facts.sampleCount >= 1,
       message:
         facts.sampleCount >= 1
-          ? `${facts.sampleCount} sample test(s) shown to solvers.`
-          : 'Mark at least one test as a sample so solvers can see an example.',
+          ? `${facts.sampleCount} sample testcase(s) shown to solvers.`
+          : 'Mark at least one testcase as a sample so solvers can see an example.',
     },
     {
       key: 'solution',

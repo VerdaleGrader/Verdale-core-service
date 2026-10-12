@@ -65,7 +65,7 @@ The integration test against a real bucket (`src/libs/storage/storage.test.ts`) 
 
 ## Publishing (provisional)
 
-`POST …/publish` makes the draft the published, immutable version. It needs a statement, an allowed language, at least one test, at least one sample test and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item. **This is only the cheap first gate.** Milestone 4 (GRD-50 to GRD-52) puts the verification run (the reference solution against every test on Judge) in front of it. Archiving closes a published problem to submissions but keeps it readable; a never-published draft is deleted instead.
+`POST …/publish` makes the draft the published, immutable version. It needs a statement, an allowed language, at least one testcase, an expected output for every testcase, at least one sample testcase and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item. **This is only the cheap first gate.** Milestone 4 (GRD-50 to GRD-52) puts the verification run (the reference solution against every test on Judge) in front of it. Archiving closes a published problem to submissions but keeps it readable; a never-published draft is deleted instead.
 
 ## Reference solutions (GRD-26)
 
@@ -92,6 +92,10 @@ POST …/submissions  ──► row `queued` ──► 202 {id}
 - **Who can read a submission** (decision, GRD-46): its author, and owners and editors of the Space. Everyone else gets 404. Previews are stored and sent for sample tests only.
 - **Live status**: `GET /api/v1/submissions/{id}/events` is Server-Sent Events. Every connection starts with the current state, so a dropped connection loses nothing and the browser's reconnect needs no bookkeeping; the stream ends at the final state. While a dispatched job has not reported, Core asks Judge `GET /internal/jobs/{id}` about every two seconds, so "running" shows. `GET /api/v1/submissions/{id}` is the polling fallback.
 - **Rate limit**: 10 submissions per minute per user, shared with re-checks, in memory per process (the same caveat as the other limits, see decisions.md).
+
+## Testcases page and Generate (GRD-108)
+
+The page saves everything at once. Files are uploaded first (`POST …/tests/files`, multipart or pasted text) and stored by hash; `PUT …/tests` then lists the testcases the problem should have, in order, with the `revision` the page started from (409 `TESTS_CHANGED` if someone else saved meanwhile) and either all changes apply or none. A testcase may have no expected output yet (`output_sha256` null); the publish gate's `outputs` check, and a database trigger behind it, block publishing until none is missing. `POST …/generate` runs a saved reference solution on the inputs (one Judge job per testcase, three at a time, 10 minutes at most) and returns outputs as hashes the author can accept in the next save; nothing changes in the problem until then. `GET/POST …/generate/{jobId}[/stop]` report and stop a job; finished jobs are kept 24 hours. `GET …/tests/{id}/files/{side}` returns a window of lines for previews.
 
 ## Running it locally with Judge
 
