@@ -270,7 +270,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Edit name, description or visibility (owner only; the slug never changes) */
+    /** Edit name, description or visibility (owner or administrator; only the owner can change visibility; the slug never changes) */
     patch: operations['updateSpace'];
     trace?: never;
   };
@@ -323,15 +323,18 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Remove a member (owner only)
-     * @description Removing the last owner is refused with 409.
+     * Remove a member (owner or administrator)
+     * @description The owner cannot be removed (409); an administrator can only remove editors, observers and solvers.
      */
     delete: operations['removeMember'];
     options?: never;
     head?: never;
     /**
-     * Change a member's role (owner only)
-     * @description Demoting the last owner is refused with 409.
+     * Change a member's role (owner or administrator)
+     * @description The owner can set any role. An administrator can only move editors, observers and
+     *     solvers between those three roles (403 otherwise). Sending `owner` hands the Space
+     *     over (owner only): the previous owner becomes an administrator. The owner cannot be
+     *     demoted directly (409).
      */
     patch: operations['changeMemberRole'];
     trace?: never;
@@ -347,7 +350,7 @@ export interface paths {
     put?: never;
     /**
      * Leave a Space
-     * @description The last owner cannot leave (409). Allowed in an archived Space.
+     * @description The owner cannot leave (409); hand the Space over first. Allowed in an archived Space.
      */
     post: operations['leaveSpace'];
     delete?: never;
@@ -363,11 +366,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Pending, unexpired invitations of a Space (owner only) */
+    /** Pending, unexpired invitations of a Space (owner or administrator) */
     get: operations['listSpaceInvites'];
     put?: never;
     /**
-     * Invite by link, or by username (owner only)
+     * Invite by link, or by username (owner or administrator)
      * @description Without `username` the result carries a `link` that anyone logged in can use once.
      *     With `username` only that user can answer it. The `token` is returned once and only
      *     its hash is stored. Invitations never grant `owner`.
@@ -389,7 +392,7 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Revoke a pending invitation (owner only) */
+    /** Revoke a pending invitation (owner or administrator) */
     delete: operations['revokeInvite'];
     options?: never;
     head?: never;
@@ -876,8 +879,13 @@ export interface components {
   schemas: {
     /** @enum {string} */
     OAuthProvider: 'github' | 'google';
-    /** @enum {string} */
-    Role: 'owner' | 'editor' | 'solver';
+    /**
+     * @description Strongest first: owner > administrator > editor > observer > solver. A visitor or
+     *     a signed-in non-member is a "viewer" and has no stored role (`my_role` is null).
+     *     Exactly one owner per Space.
+     * @enum {string}
+     */
+    Role: 'owner' | 'administrator' | 'editor' | 'observer' | 'solver';
     /** @description The account owner's view. Other users never see `id` or `email`. */
     Me: {
       /** Format: uuid */
@@ -945,8 +953,11 @@ export interface components {
       joined_at: string;
     };
     CreateInviteRequest: {
-      /** @enum {string} */
-      role: 'editor' | 'solver';
+      /**
+       * @description An administrator can only invite editor, observer or solver.
+       * @enum {string}
+       */
+      role: 'administrator' | 'editor' | 'observer' | 'solver';
       /** @description Address the invitation to one user. Omit for a link invitation. */
       username?: string;
       /** @default 7 */
@@ -959,8 +970,7 @@ export interface components {
         name: string;
         slug: string;
       };
-      /** @enum {string} */
-      role: 'editor' | 'solver';
+      role: components['schemas']['Role'];
       /** @enum {string} */
       status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
       /** Format: date-time */

@@ -344,7 +344,7 @@ paths:
     patch:
       operationId: updateSpace
       tags: [spaces]
-      summary: Edit name, description or visibility (owner only; the slug never changes)
+      summary: Edit name, description or visibility (owner or administrator; only the owner can change visibility; the slug never changes)
       security:
         - session: []
       parameters:
@@ -429,8 +429,12 @@ paths:
     patch:
       operationId: changeMemberRole
       tags: [members]
-      summary: Change a member's role (owner only)
-      description: Demoting the last owner is refused with 409.
+      summary: Change a member's role (owner or administrator)
+      description: |
+        The owner can set any role. An administrator can only move editors, observers and
+        solvers between those three roles (403 otherwise). Sending `owner` hands the Space
+        over (owner only): the previous owner becomes an administrator. The owner cannot be
+        demoted directly (409).
       security:
         - session: []
       parameters:
@@ -466,8 +470,8 @@ paths:
     delete:
       operationId: removeMember
       tags: [members]
-      summary: Remove a member (owner only)
-      description: Removing the last owner is refused with 409.
+      summary: Remove a member (owner or administrator)
+      description: The owner cannot be removed (409); an administrator can only remove editors, observers and solvers.
       security:
         - session: []
       parameters:
@@ -489,7 +493,8 @@ paths:
       operationId: leaveSpace
       tags: [members]
       summary: Leave a Space
-      description: The last owner cannot leave (409). Allowed in an archived Space.
+      description: >-
+        The owner cannot leave (409); hand the Space over first. Allowed in an archived Space.
       security:
         - session: []
       parameters:
@@ -507,7 +512,7 @@ paths:
     get:
       operationId: listSpaceInvites
       tags: [invites]
-      summary: Pending, unexpired invitations of a Space (owner only)
+      summary: Pending, unexpired invitations of a Space (owner or administrator)
       security:
         - session: []
       parameters:
@@ -528,7 +533,7 @@ paths:
     post:
       operationId: createInvite
       tags: [invites]
-      summary: Invite by link, or by username (owner only)
+      summary: Invite by link, or by username (owner or administrator)
       description: |
         Without `username` the result carries a `link` that anyone logged in can use once.
         With `username` only that user can answer it. The `token` is returned once and only
@@ -564,7 +569,7 @@ paths:
     delete:
       operationId: revokeInvite
       tags: [invites]
-      summary: Revoke a pending invitation (owner only)
+      summary: Revoke a pending invitation (owner or administrator)
       security:
         - session: []
       parameters:
@@ -1606,7 +1611,11 @@ components:
       enum: [github, google]
     Role:
       type: string
-      enum: [owner, editor, solver]
+      description: |
+        Strongest first: owner > administrator > editor > observer > solver. A visitor or
+        a signed-in non-member is a "viewer" and has no stored role (`my_role` is null).
+        Exactly one owner per Space.
+      enum: [owner, administrator, editor, observer, solver]
     Me:
       type: object
       description: The account owner's view. Other users never see `id` or `email`.
@@ -1742,7 +1751,8 @@ components:
       properties:
         role:
           type: string
-          enum: [editor, solver]
+          description: An administrator can only invite editor, observer or solver.
+          enum: [administrator, editor, observer, solver]
         username:
           type: string
           description: Address the invitation to one user. Omit for a link invitation.
@@ -1767,8 +1777,7 @@ components:
             slug:
               type: string
         role:
-          type: string
-          enum: [editor, solver]
+          $ref: '#/components/schemas/Role'
         status:
           type: string
           enum: [pending, accepted, declined, revoked, expired]

@@ -1,7 +1,8 @@
 import type { PrismaClient, User } from '../../../generated/prisma/client';
-import { ConflictError, GoneError, NotFoundError } from '@/errors';
+import { ConflictError, ForbiddenError, GoneError, NotFoundError } from '@/errors';
 import { generateToken, hashToken } from '@/libs/tokens';
 import TLogger, { Layer } from '@/logging/logger';
+import { canAssignRole } from '@/permissions/can';
 import { Db } from '@/repositories/db';
 import InviteRepository from '@/repositories/invite.repository';
 import SpaceRepository from '@/repositories/space.repository';
@@ -30,7 +31,7 @@ export interface InviteDto {
 }
 
 export interface CreateInviteInput {
-  role: 'editor' | 'solver';
+  role: 'administrator' | 'editor' | 'observer' | 'solver';
   username?: string;
   expires_in_days: number;
 }
@@ -58,6 +59,11 @@ export default class InviteService {
     const logger = this.logger.setContext('service.invite.create', requestId);
     const access = await this.spaceService.load(this.prisma, slug, user);
     assertCan(user, 'space.manage_members', access);
+    // An administrator can invite editors, observers and solvers; only the
+    // owner can invite another administrator (GRD-96).
+    if (!canAssignRole(access.role, null, input.role)) {
+      throw new ForbiddenError('Only the owner can invite an administrator.');
+    }
 
     let inviteeId: string | null = null;
     if (input.username) {
@@ -113,6 +119,9 @@ export default class InviteService {
     const invite = await this.invites.findById(this.prisma, inviteId);
     if (!invite || invite.space.id !== access.space.id)
       throw new NotFoundError('Invitation not found.');
+    if (!canAssignRole(access.role, null, invite.role as Role)) {
+      throw new ForbiddenError('Only the owner can revoke an invitation to administrator.');
+    }
     if (!(await this.invites.settle(this.prisma, invite.id, 'revoked', this.now()))) {
       throw new ConflictError('This invitation is no longer pending.');
     }

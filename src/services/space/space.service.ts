@@ -91,6 +91,10 @@ export default class SpaceService {
   async update(user: User, slug: string, input: UpdateSpaceInput): Promise<SpaceDto> {
     const access = await this.load(this.prisma, slug, user);
     assertCan(user, 'space.update', access);
+    // Going public or private changes who can see everything: owner only.
+    if (input.visibility !== undefined && input.visibility !== access.space.visibility) {
+      assertCan(user, 'space.change_visibility', access);
+    }
     const updated = await this.spaces.update(this.prisma, access.space.id, input);
     return toSpaceDto(updated, access.role);
   }

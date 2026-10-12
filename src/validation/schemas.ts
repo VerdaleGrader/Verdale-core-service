@@ -58,10 +58,12 @@ export const updateMeBody = z
     message: 'Send at least one field to change.',
   });
 
-export const changeRoleBody = z.object({ role: z.enum(['owner', 'editor', 'solver']) });
+export const changeRoleBody = z.object({
+  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver']),
+});
 
 export const createInviteBody = z.object({
-  role: z.enum(['editor', 'solver']),
+  role: z.enum(['administrator', 'editor', 'observer', 'solver']),
   username: z.string().trim().min(1).max(64).optional(),
   expires_in_days: z.number().int().min(1).max(30).default(7),
 });

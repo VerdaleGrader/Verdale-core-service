@@ -13,6 +13,7 @@ import ProblemRepository from '@/repositories/problem.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import SubmissionRepository, { SubmissionRecord } from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import { isWriter } from '@/permissions/can';
 import { isAuthor } from '@/services/problem/problem.access';
 import { currentVersionOf } from '@/services/problem/problem.mapper';
 import ProblemService from '@/services/problem/problem.service';
@@ -127,7 +128,7 @@ export default class SubmissionService {
     const author = isAuthor(user, access);
     if (problem.status === 'draft' && !author) throw new NotFoundError('Problem not found.');
     if (input.scope === 'all' && !author) {
-      throw new ForbiddenError("Only owners and editors can see everyone's submissions.");
+      throw new ForbiddenError("Only the Space's staff can see everyone's submissions.");
     }
     const { rows, total } = await this.submissions.list(this.prisma, {
       problemId: problem.id,
@@ -218,11 +219,12 @@ export default class SubmissionService {
     if (!allowed) throw new NotFoundError('Submission not found.');
   }
 
-  /** Checking again needs the right to submit here, and being the author or an owner/editor. */
+  /** Checking again needs the right to submit here, and being the author or someone who can edit problems. */
   private mayRejudge(user: User, access: SpaceAccess, submission: SubmissionRecord): boolean {
     if (submission.status !== 'completed' || submission.verdict !== 'ISE') return false;
     if (!can(actorOf(user), 'submission.create', resourceOf(access))) return false;
-    return submission.user_id === user.id || isAuthor(user, access);
+    // An observer reads everything but changes nothing, so cannot trigger a re-judge.
+    return submission.user_id === user.id || isWriter(access.role);
   }
 
   private present(
