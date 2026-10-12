@@ -1,18 +1,14 @@
 export interface PublishCheck {
-  key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'outputs' | 'solution';
+  key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'solution';
   ok: boolean;
   message: string;
 }
 
 export interface PublishFacts {
   statement: string;
-  statementMode: 'markdown' | 'pdf';
-  hasStatementPdf: boolean;
   languageCount: number;
   testCount: number;
   sampleCount: number;
-  /** Testcases without an expected output. */
-  missingOutputCount: number;
   hasPrimarySolution: boolean;
 }
 
@@ -23,7 +19,12 @@ export interface PublishFacts {
  */
 export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
   return [
-    statementCheck(facts),
+    {
+      key: 'statement',
+      ok: facts.statement.trim().length > 0,
+      message:
+        facts.statement.trim().length > 0 ? 'The statement is written.' : 'Write the statement.',
+    },
     {
       key: 'languages',
       ok: facts.languageCount >= 1,
@@ -36,25 +37,15 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
       key: 'tests',
       ok: facts.testCount >= 1,
       message:
-        facts.testCount >= 1
-          ? `${facts.testCount} testcase(s) added.`
-          : 'Add at least one testcase.',
-    },
-    {
-      key: 'outputs',
-      ok: facts.missingOutputCount === 0,
-      message:
-        facts.missingOutputCount === 0
-          ? 'Every testcase has an expected output.'
-          : `${facts.missingOutputCount} testcase(s) have no expected output yet. Upload one or generate it from a solution.`,
+        facts.testCount >= 1 ? `${facts.testCount} test(s) added.` : 'Add at least one test.',
     },
     {
       key: 'sample_test',
       ok: facts.sampleCount >= 1,
       message:
         facts.sampleCount >= 1
-          ? `${facts.sampleCount} sample testcase(s) shown to solvers.`
-          : 'Mark at least one testcase as a sample so solvers can see an example.',
+          ? `${facts.sampleCount} sample test(s) shown to solvers.`
+          : 'Mark at least one test as a sample so solvers can see an example.',
     },
     {
       key: 'solution',
@@ -64,22 +55,4 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
         : 'Attach a reference solution and mark it as primary.',
     },
   ];
-}
-
-function statementCheck(facts: PublishFacts): PublishCheck {
-  if (facts.statementMode === 'pdf') {
-    return {
-      key: 'statement',
-      ok: facts.hasStatementPdf,
-      message: facts.hasStatementPdf
-        ? 'The statement is a PDF.'
-        : 'Upload the PDF statement, or switch back to Markdown.',
-    };
-  }
-  const written = facts.statement.trim().length > 0;
-  return {
-    key: 'statement',
-    ok: written,
-    message: written ? 'The statement is written.' : 'Write the statement.',
-  };
 }

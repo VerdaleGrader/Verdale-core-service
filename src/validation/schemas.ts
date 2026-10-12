@@ -37,7 +37,6 @@ export const createSpaceBody = z.object({
   slug: z.string().trim().min(1).max(64),
   description: spaceDescription.default(''),
   visibility: visibility.default('private'),
-  track_name: z.string().trim().min(1).max(80).optional(),
 });
 
 export const updateSpaceBody = z
@@ -50,29 +49,19 @@ export const updateSpaceBody = z
     message: 'Send at least one field to change.',
   });
 
-/** A name people see: 1 to 64 characters, no control characters (new lines, NUL, ...). */
-const displayName = z
-  .string()
-  .trim()
-  .min(1, 'Enter a name.')
-  .max(64, 'Use at most 64 characters.')
-  .refine((value) => !/\p{Cc}/u.test(value), 'Remove control characters.');
-
 export const updateMeBody = z
   .object({
-    display_name: displayName.optional(),
+    display_name: z.string().trim().min(1).max(64).optional(),
     username: z.string().trim().min(1).max(64).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
     message: 'Send at least one field to change.',
   });
 
-export const changeRoleBody = z.object({
-  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver']),
-});
+export const changeRoleBody = z.object({ role: z.enum(['owner', 'editor', 'solver']) });
 
 export const createInviteBody = z.object({
-  role: z.enum(['administrator', 'editor', 'observer', 'solver']),
+  role: z.enum(['editor', 'solver']),
   username: z.string().trim().min(1).max(64).optional(),
   expires_in_days: z.number().int().min(1).max(30).default(7),
 });
@@ -116,7 +105,6 @@ const memoryLimit = z
   .max(MEMORY_LIMIT_KB.max, `Use at most ${MEMORY_LIMIT_KB.max / 1024} MB.`);
 
 const language = z.enum(LANGUAGES as [string, ...string[]]);
-const catalogSlugField = z.string().trim().min(1).max(64);
 
 const allowedLanguages = z
   .array(language)
@@ -141,7 +129,6 @@ export const updateProblemBody = z
   .object({
     title: problemTitle.optional(),
     statement: problemStatement.optional(),
-    statement_mode: z.enum(['markdown', 'pdf']).optional(),
     time_limit_ms: timeLimit.optional(),
     memory_limit_kb: memoryLimit.optional(),
     allowed_languages: allowedLanguages.optional(),
@@ -190,7 +177,6 @@ export const updateSolutionBody = z
 export const createSubmissionBody = z.object({
   language,
   source: solutionSource,
-  track: catalogSlugField.optional(),
 });
 
 export const submissionListQuery = z.object({
@@ -202,220 +188,3 @@ export const submissionListQuery = z.object({
 export const assetParams = z.object({
   name: z.string().regex(/^[a-f0-9]{32}\.(png|jpg|webp)$/),
 });
-
-// --- Tracks and Collections (M3: GRD-77 to GRD-82) ---------------------------
-
-const catalogName = z
-  .string()
-  .trim()
-  .min(1, 'Enter a name.')
-  .max(80, 'Use at most 80 characters.')
-  .refine(withoutNul, NUL_MESSAGE);
-const catalogDescription = z
-  .string()
-  .trim()
-  .max(500, 'Use at most 500 characters.')
-  .refine(withoutNul, NUL_MESSAGE);
-const catalogSlug = z.string().trim().min(1).max(64);
-const slugList = (max: number) => z.array(catalogSlug).max(max);
-
-export const trackParams = slugParams.extend({ trackSlug: catalogSlug });
-export const trackMemberParams = trackParams.extend({ username: z.string().min(1).max(64) });
-export const trackInviteParams = trackParams.extend({ inviteId: z.uuid() });
-export const collectionParams = slugParams.extend({ collectionSlug: catalogSlug });
-export const catalogListQuery = z.object({ include_archived: queryBoolean });
-
-const trackPrivacy = z.enum(['space', 'members']);
-
-export const createTrackBody = z.object({
-  name: catalogName,
-  slug: catalogSlug.optional(),
-  description: catalogDescription.default(''),
-  privacy: trackPrivacy.default('space'),
-});
-
-export const updateTrackBody = z
-  .object({
-    name: catalogName.optional(),
-    description: catalogDescription.optional(),
-    privacy: trackPrivacy.optional(),
-    archived: z.boolean().optional(),
-  })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: 'Send at least one field to change.',
-  });
-
-export const reorderTracksBody = z.object({ track_slugs: slugList(200) });
-export const setTrackCollectionsBody = z.object({ collection_slugs: slugList(500) });
-
-export const createCollectionBody = z.object({
-  name: catalogName,
-  slug: catalogSlug.optional(),
-  description: catalogDescription.default(''),
-});
-
-export const updateCollectionBody = z
-  .object({
-    name: catalogName.optional(),
-    description: catalogDescription.optional(),
-    archived: z.boolean().optional(),
-  })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: 'Send at least one field to change.',
-  });
-
-export const setCollectionProblemsBody = z.object({ problem_slugs: slugList(1000) });
-
-export const patchCollectionProblemsBody = z
-  .object({ add: slugList(1000).default([]), remove: slugList(1000).default([]) })
-  .refine((body) => body.add.length + body.remove.length > 0, {
-    message: 'Send at least one problem to add or remove.',
-  });
-
-export const createTrackInviteBody = z.object({
-  username: z.string().trim().min(1).max(64).optional(),
-  expires_in_days: z.number().int().min(1).max(30).default(7),
-});
-
-// --- The Space's submissions for staff (M3: GRD-93) ---------------------------
-
-const VERDICT_CODES = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'OLE', 'ISE'] as const;
-
-const optionalText = z
-  .string()
-  .trim()
-  .max(80)
-  .optional()
-  .transform((value) => value || undefined);
-
-/** `verdict=AC,WA` */
-const verdictList = z
-  .string()
-  .optional()
-  .transform((value) =>
-    value ? value.split(',').map((item) => item.trim().toUpperCase()) : undefined
-  )
-  .pipe(z.array(z.enum(VERDICT_CODES)).min(1).max(8).optional());
-
-const listPage = { page: pagination.page, page_size: pagination.page_size };
-
-export const spaceSubmissionsQuery = z.object({
-  member: optionalText,
-  q: optionalText,
-  problem: optionalText,
-  track: optionalText,
-  verdict: verdictList,
-  language: z.enum(['c', 'cpp', 'python']).optional(),
-  version: z.coerce.number().int().min(1).max(100_000).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  sort: z.enum(['newest', 'oldest', 'member', 'tests_passed', 'time']).default('newest'),
-  page: pagination.page,
-  page_size: z.coerce.number().int().min(1).max(SUBMISSION_LIST_MAX_PAGE_SIZE).default(20),
-});
-
-const windowName = z.enum(['any', '7d', '30d']).default('any');
-const problemStatusFilter = z.enum(['all', 'published', 'draft', 'archived']).default('all');
-
-export const byMemberQuery = z.object({
-  q: optionalText,
-  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver', 'none']).optional(),
-  track: optionalText,
-  window: windowName,
-  sort: z.enum(['last_submission', 'solved', 'name']).default('last_submission'),
-  hide_empty: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
-  ...listPage,
-});
-
-export const memberProblemsQuery = z.object({
-  q: optionalText,
-  track: optionalText,
-  status: z.enum(['all', 'solved', 'unsolved']).default('all'),
-  sort: z.enum(['last_submission', 'attempts', 'name']).default('last_submission'),
-  ...listPage,
-});
-
-export const byTrackQuery = z.object({
-  q: optionalText,
-  privacy: z.enum(['space', 'members']).optional(),
-  window: windowName,
-  sort: z.enum(['track_order', 'last_submission', 'submissions']).default('track_order'),
-});
-
-export const trackProblemsQuery = z.object({
-  q: optionalText,
-  collection: optionalText,
-  status: problemStatusFilter,
-  sort: z.enum(['track_order', 'solved_fewest', 'last_submission']).default('track_order'),
-});
-
-export const byProblemQuery = z.object({
-  q: optionalText,
-  track: optionalText,
-  status: problemStatusFilter,
-  sort: z
-    .enum(['last_submission', 'submissions', 'solved_fewest', 'name'])
-    .default('last_submission'),
-  ...listPage,
-});
-
-export const versionsQuery = z.object({ problem: optionalText });
-
-export const submissionTestParams = submissionParams.extend({
-  position: z.coerce.number().int().min(1).max(100_000),
-});
-
-export const testDetailQuery = z.object({
-  part: z.enum(['input', 'expected', 'output', 'stderr']).optional(),
-  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
-  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
-});
-
-// --- Testcases page: staged files, one save, preview, generate (M3: GRD-108) ---
-
-const sha256Ref = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Not a file hash.') });
-
-/** Pasted text becomes a staged file; the body limit (1 MiB) keeps pasting for small testcases. */
-export const stageTextBody = z.object({
-  text: z
-    .string()
-    .max(1024 * 1024, 'Use Upload files for anything over 1 MiB.')
-    .refine((value) => !value.includes('\u0000'), 'Remove the NUL character (U+0000).'),
-});
-
-export const batchTestsBody = z.object({
-  revision: z.string().min(1).max(64).optional(),
-  tests: z
-    .array(
-      z.object({
-        id: z.uuid().optional(),
-        is_sample: z.boolean(),
-        input: sha256Ref.optional(),
-        output: sha256Ref.optional(),
-      })
-    )
-    .max(500),
-});
-
-export const testFileParams = testParams.extend({ side: z.enum(['input', 'output']) });
-
-export const fileSliceQuery = z.object({
-  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
-  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
-  inline: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
-});
-
-export const generateBody = z.object({
-  solution_id: z.uuid(),
-  test_ids: z.array(z.uuid()).min(1).max(500).optional(),
-});
-
-export const statementPdfQuery = z.object({ draft: queryBoolean });
-
-export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });

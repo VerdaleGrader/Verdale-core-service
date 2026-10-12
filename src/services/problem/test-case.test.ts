@@ -279,12 +279,7 @@ describeDb('Tests of a problem (GRD-23, 24, 25)', () => {
       await addTest(cast.editor, cast.slug, 'sum', '1 2\n', '3\n', true);
       await addTest(cast.editor, cast.slug, 'sum', '4 5\n', '9\n');
       const body = await list();
-      expect(body.summary).toEqual({
-        count: 2,
-        sample_count: 1,
-        missing_output_count: 0,
-        total_bytes: 4 + 2 + 4 + 2,
-      });
+      expect(body.summary).toEqual({ count: 2, sample_count: 1, total_bytes: 4 + 2 + 4 + 2 });
       expect(body.limits).toEqual({
         max_count: 100,
         max_total_bytes: 128 * 1024 * 1024,

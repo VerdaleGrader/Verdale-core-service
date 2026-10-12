@@ -2,8 +2,6 @@ import type { ProblemVersion, TestCase } from '../../../generated/prisma/client'
 import {
   IMAGE_CONTENT_TYPES,
   IMAGE_MAX_BYTES,
-  PDF_MAX_BYTES,
-  PDF_MAX_PAGES,
   LANGUAGES,
   MEMORY_LIMIT_KB,
   SOLUTIONS_MAX_COUNT,
@@ -18,29 +16,6 @@ import type { ProblemWithVersion } from '@/repositories/problem.repository';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
 
 export type Language = 'c' | 'cpp' | 'python';
-export type StatementModeName = 'markdown' | 'pdf';
-
-export interface StatementPdfDto {
-  size_bytes: number;
-  pages: number;
-  sha256: string;
-}
-
-export function toStatementPdf(version: ProblemVersion): StatementPdfDto | null {
-  if (
-    !version.statement_pdf_sha256 ||
-    version.statement_pdf_size_bytes === null ||
-    version.statement_pdf_pages === null
-  ) {
-    return null;
-  }
-  return {
-    size_bytes: version.statement_pdf_size_bytes,
-    pages: version.statement_pdf_pages,
-    sha256: version.statement_pdf_sha256,
-  };
-}
-
 export type ProblemStatusName = 'draft' | 'published' | 'archived';
 
 export interface ProblemConstraintsDto {
@@ -51,7 +26,6 @@ export interface ProblemConstraintsDto {
   languages: Language[];
   tests: TestLimitsDto;
   images: { max_bytes: number; content_types: string[] };
-  statement_pdf: { max_bytes: number; max_pages: number };
   solutions: { max_count: number };
   source_max_bytes: number;
 }
@@ -77,7 +51,6 @@ export function constraints(): ProblemConstraintsDto {
     languages: [...LANGUAGES],
     tests: testLimits(),
     images: { max_bytes: IMAGE_MAX_BYTES, content_types: [...IMAGE_CONTENT_TYPES] },
-    statement_pdf: { max_bytes: PDF_MAX_BYTES, max_pages: PDF_MAX_PAGES },
     solutions: { max_count: SOLUTIONS_MAX_COUNT },
     source_max_bytes: SOURCE_MAX_BYTES,
   };
@@ -130,9 +103,6 @@ export interface ProblemVersionDto {
   status: 'draft' | 'published';
   title: string;
   statement: string;
-  statement_mode: StatementModeName;
-  /** The uploaded PDF, kept on the draft even while the mode is Markdown; null when there is none. */
-  statement_pdf: StatementPdfDto | null;
   time_limit_ms: number;
   memory_limit_kb: number;
   allowed_languages: Language[];
@@ -148,8 +118,6 @@ export function toVersionDto(version: ProblemVersion): ProblemVersionDto {
     status: version.status,
     title: version.title,
     statement: version.statement,
-    statement_mode: version.statement_mode,
-    statement_pdf: toStatementPdf(version),
     time_limit_ms: version.time_limit_ms,
     memory_limit_kb: version.memory_limit_kb,
     allowed_languages: version.allowed_languages,
@@ -164,10 +132,9 @@ export interface TestCaseDto {
   position: number;
   is_sample: boolean;
   input_sha256: string;
-  /** Null while the expected output is still to be created (paste without one, or generate it). */
-  output_sha256: string | null;
+  output_sha256: string;
   input_size_bytes: number;
-  output_size_bytes: number | null;
+  output_size_bytes: number;
   created_at: string;
 }
 
@@ -187,7 +154,5 @@ export function toTestCaseDto(test: TestCase): TestCaseDto {
 export interface TestSummaryDto {
   count: number;
   sample_count: number;
-  /** Testcases still waiting for an expected output (paste without one, or to generate). */
-  missing_output_count: number;
   total_bytes: number;
 }

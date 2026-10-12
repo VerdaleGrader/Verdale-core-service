@@ -1,12 +1,10 @@
 import { z } from 'zod';
 import type { PrismaClient } from '../../../generated/prisma/client';
 import { BadRequestError, ConflictError, NotFoundError, VError } from '@/errors';
-import { CAPTURE } from '@/constants/limits';
 import { verify } from '@/libs/hmac';
 import TLogger, { Layer } from '@/logging/logger';
 import SubmissionRepository, { SubmissionResultInput } from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
-import GenerateService from '@/services/problem/generate.service';
 
 const VERDICTS = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'OLE', 'ISE'] as const;
 const TEST_VERDICTS = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'OLE', 'ISE', 'SKIPPED'] as const;
@@ -27,11 +25,6 @@ const jobResultSchema = z.object({
       signal: z.number().int().optional(),
       stdout_preview: z.string().optional(),
       checker_message: z.string().optional(),
-      // Present when Core asked for `capture`, for every test that ran (GRD-93).
-      stdout: z.string().optional(),
-      stdout_size_bytes: z.number().int().min(0).optional(),
-      stderr: z.string().optional(),
-      stderr_size_bytes: z.number().int().min(0).optional(),
     })
   ),
   summary: z.object({
@@ -44,28 +37,6 @@ const jobResultSchema = z.object({
   judged_at: z.iso.datetime({ offset: true }),
   judge_version: z.string(),
 });
-
-/** Bounds on what is stored of a program's output, whatever Judge sends. */
-const STORED_STDOUT_CHARS = CAPTURE.stdout_bytes;
-const STORED_STDERR_CHARS = CAPTURE.stderr_bytes;
-
-/** Postgres text cannot hold NUL, and a runaway result must not fill the table. */
-const clean = (text: string, limit: number) => text.replaceAll('\u0000', '\uFFFD').slice(0, limit);
-
-function capturedOutput(test: {
-  stdout?: string;
-  stdout_size_bytes?: number;
-  stderr?: string;
-  stderr_size_bytes?: number;
-}): SubmissionResultInput['output'] {
-  if (test.stdout === undefined && test.stderr === undefined) return null;
-  return {
-    stdout: test.stdout === undefined ? null : clean(test.stdout, STORED_STDOUT_CHARS),
-    stdout_size_bytes: test.stdout === undefined ? null : (test.stdout_size_bytes ?? null),
-    stderr: test.stderr === undefined ? null : clean(test.stderr, STORED_STDERR_CHARS),
-    stderr_size_bytes: test.stderr === undefined ? null : (test.stderr_size_bytes ?? null),
-  };
-}
 
 export type ReceiveOutcome = 'stored' | 'duplicate';
 
@@ -89,7 +60,6 @@ export default class JudgeResultService {
     private readonly submissions: SubmissionRepository,
     private readonly tests: TestCaseRepository,
     private readonly callbackKeys: Record<string, string>,
-    private readonly generate: GenerateService,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -136,21 +106,6 @@ export default class JudgeResultService {
       throw unprocessable('The result does not match the contract.');
     }
     const result = parsed.data;
-    if (result.kind === 'generate') {
-      // Expected outputs being created from a solution (GRD-108), not a submission.
-      const known = await this.generate.receive(
-        {
-          job_id: result.job_id,
-          verdict: result.verdict,
-          compile: result.compile,
-          tests: result.tests,
-          error: result.error,
-        },
-        requestId
-      );
-      if (!known) throw new NotFoundError('Unknown job.');
-      return 'stored';
-    }
     if (result.kind !== 'submission') {
       throw unprocessable(`Core only accepts results of "submission" jobs, not "${result.kind}".`);
     }
@@ -202,7 +157,6 @@ export default class JudgeResultService {
           signal: test.signal ?? null,
           stdout_preview: isSample ? (test.stdout_preview?.slice(0, 1024) ?? null) : null,
           checker_message: isSample ? (test.checker_message?.slice(0, 256) ?? null) : null,
-          output: capturedOutput(test),
         });
       }
       rows.sort((left, right) => left.position - right.position);

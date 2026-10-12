@@ -113,25 +113,20 @@ describeDb('profile (GRD-12)', () => {
   });
 
   describe('what other people can see', () => {
-    it('is only username, display name and picture, never the e-mail or id', async () => {
+    it('is only username and display name, never the e-mail or id', async () => {
       await signUp('ada');
       const grace = await signUp('grace');
       for (const viewer of [grace, t.anonymous()]) {
         const response = await viewer.request('GET', '/api/v1/users/ada');
         expect(response.status).toBe(200);
-        expect(Object.keys(response.body).sort()).toEqual([
-          'avatar_url',
-          'display_name',
-          'username',
-        ]);
+        expect(Object.keys(response.body).sort()).toEqual(['display_name', 'username']);
       }
     });
 
-    it('member lists expose the same fields plus the role', async () => {
+    it('member lists expose the same two fields plus the role', async () => {
       const ada = await signUp('ada');
       const response = await ada.request('GET', '/api/v1/spaces/ada/members');
       expect(Object.keys(response.body.items[0]).sort()).toEqual([
-        'avatar_url',
         'display_name',
         'joined_at',
         'role',
@@ -143,139 +138,6 @@ describeDb('profile (GRD-12)', () => {
       await signUp('ada');
       expect((await t.anonymous().request('GET', '/api/v1/users/nobody')).status).toBe(404);
       expect((await t.anonymous().request('GET', '/api/v1/users/ADA')).status).toBe(200);
-    });
-  });
-
-  describe('profile picture (GRD-68)', () => {
-    const picture = 'https://lh3.googleusercontent.com/a/ada';
-
-    it('is kept from the provider at sign-up and shown to everyone', async () => {
-      const ada = await t.login({
-        providerAccountId: 'ada',
-        email: 'ada@example.com',
-        usernameHint: 'ada',
-        avatarUrl: picture,
-      });
-      expect((await ada.request('GET', '/api/v1/me')).body.avatar_url).toBe(picture);
-      expect((await t.anonymous().request('GET', '/api/v1/users/ada')).body.avatar_url).toBe(
-        picture
-      );
-      const members = await ada.request('GET', '/api/v1/spaces/ada/members');
-      expect(members.body.items[0].avatar_url).toBe(picture);
-    });
-
-    it('is null when the provider has none, so the web app shows initials', async () => {
-      const ada = await signUp('ada');
-      expect((await ada.request('GET', '/api/v1/me')).body.avatar_url).toBeNull();
-    });
-
-    it('is refreshed at every sign-in, and a sign-in without one keeps the old picture', async () => {
-      await t.login({
-        providerAccountId: 'ada',
-        email: 'ada@example.com',
-        usernameHint: 'ada',
-        avatarUrl: picture,
-      });
-      const again = await t.login({
-        providerAccountId: 'ada',
-        email: 'ada@example.com',
-        usernameHint: 'ada',
-        avatarUrl: 'https://example.com/new.png',
-      });
-      expect((await again.request('GET', '/api/v1/me')).body.avatar_url).toBe(
-        'https://example.com/new.png'
-      );
-      const without = await signUp('ada');
-      expect((await without.request('GET', '/api/v1/me')).body.avatar_url).toBe(
-        'https://example.com/new.png'
-      );
-    });
-
-    it('is also refreshed when the same person signs in with another provider account', async () => {
-      await t.login({
-        providerAccountId: 'ada-github',
-        email: 'ada@example.com',
-        usernameHint: 'ada',
-        avatarUrl: picture,
-      });
-      const other = await t.login({
-        providerAccountId: 'ada-other',
-        email: 'ada@example.com',
-        usernameHint: 'ada',
-        avatarUrl: 'https://example.com/other.png',
-      });
-      expect((await other.request('GET', '/api/v1/me')).body.avatar_url).toBe(
-        'https://example.com/other.png'
-      );
-    });
-
-    it('cannot be set by the user in the MVP', async () => {
-      const ada = await signUp('ada');
-      const response = await ada.request('PATCH', '/api/v1/me', {
-        display_name: 'Ada L',
-        avatar_url: 'https://example.com/me.png',
-      });
-      expect(response.status).toBe(200);
-      expect(response.body.avatar_url).toBeNull();
-    });
-  });
-
-  describe('display name (GRD-68)', () => {
-    it('can be changed, and the new name shows up everywhere without signing in again', async () => {
-      const ada = await signUp('ada');
-      const response = await ada.request('PATCH', '/api/v1/me', {
-        display_name: '  Ada Lovelace ',
-      });
-      expect(response.status).toBe(200);
-      expect(response.body.display_name).toBe('Ada Lovelace');
-      expect(response.body.username).toBe('ada');
-      expect((await ada.request('GET', '/api/v1/me')).body.display_name).toBe('Ada Lovelace');
-      expect((await t.anonymous().request('GET', '/api/v1/users/ada')).body.display_name).toBe(
-        'Ada Lovelace'
-      );
-      const members = await ada.request('GET', '/api/v1/spaces/ada/members');
-      expect(members.body.items[0].display_name).toBe('Ada Lovelace');
-    });
-
-    it.each([
-      ['empty', ''],
-      ['only spaces', '   '],
-      ['too long', 'x'.repeat(65)],
-      ['a new line', 'Ada\nLovelace'],
-      ['a NUL character', 'Ada\u0000'],
-      ['a tab', 'Ada\tL'],
-    ])('refuses a name that is %s', async (_label, name) => {
-      const ada = await signUp('ada');
-      const response = await ada.request('PATCH', '/api/v1/me', { display_name: name });
-      expect(response.status).toBe(400);
-      expect(response.body.details?.[0]?.field).toBe('display_name');
-      expect((await ada.request('GET', '/api/v1/me')).body.display_name).toBe('ada');
-    });
-
-    it('accepts any language and emoji, up to 64 characters', async () => {
-      const ada = await signUp('ada');
-      for (const name of ['อดา เลิฟเลซ', 'Ada ✨', 'x'.repeat(64)]) {
-        const response = await ada.request('PATCH', '/api/v1/me', { display_name: name });
-        expect(response.status).toBe(200);
-      }
-    });
-
-    it('is rate limited', async () => {
-      const ada = await signUp('ada');
-      const statuses: number[] = [];
-      for (let i = 0; i < 12; i++) {
-        statuses.push(
-          (await ada.request('PATCH', '/api/v1/me', { display_name: `Ada ${i}` })).status
-        );
-      }
-      expect(statuses.slice(0, 10).every((status) => status === 200)).toBe(true);
-      expect(statuses.slice(10)).toEqual([429, 429]);
-    });
-
-    it('needs a login', async () => {
-      expect(
-        (await t.anonymous().request('PATCH', '/api/v1/me', { display_name: 'x' })).status
-      ).toBe(401);
     });
   });
 });

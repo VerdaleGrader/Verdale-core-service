@@ -64,27 +64,3 @@ export const RESERVED_PROBLEM_SLUGS: ReadonlySet<string> = new Set([
 export function isValidProblemSlug(value: string): boolean {
   return PROBLEM_SLUG_PATTERN.test(value) && !RESERVED_PROBLEM_SLUGS.has(value);
 }
-
-/**
- * Track and Collection slugs live inside a Space (/spaces/<space>/tracks/<slug>).
- * Same shape as problem slugs; the reserved words are the routes below a Track.
- */
-export const CATALOG_RESERVED_SLUGS: ReadonlySet<string> = new Set([
-  'new',
-  'edit',
-  'order',
-  'members',
-  'invites',
-  'progress',
-  'problems',
-  'collections',
-  'archive',
-  'settings',
-]);
-
-export function isValidCatalogSlug(value: string): boolean {
-  return PROBLEM_SLUG_PATTERN.test(value) && !CATALOG_RESERVED_SLUGS.has(value);
-}
-
-export const CATALOG_SLUG_MESSAGE =
-  'Use 2 to 64 lower-case letters, digits, "-" or "_", starting with a letter or digit.';
