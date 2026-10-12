@@ -775,7 +775,7 @@ export default class TestCaseService {
 
 function sampleCountError() {
   return new ConflictError(
-    `A problem can have at most ${TEST_LIMITS.max_samples} sample tests.`,
+    `A problem can have at most ${TEST_LIMITS.max_samples} sample testcases.`,
     'SAMPLE_LIMIT_REACHED'
   );
 }

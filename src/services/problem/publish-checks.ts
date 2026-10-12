@@ -36,7 +36,7 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
       key: 'tests',
       ok: facts.testCount >= 1,
       message:
-        facts.testCount >= 1 ? `${facts.testCount} test(s) added.` : 'Add at least one test.',
+        facts.testCount >= 1 ? `${facts.testCount} testcase(s) added.` : 'Add at least one testcase.',
     },
     {
       key: 'outputs',
@@ -51,8 +51,8 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
       ok: facts.sampleCount >= 1,
       message:
         facts.sampleCount >= 1
-          ? `${facts.sampleCount} sample test(s) shown to solvers.`
-          : 'Mark at least one test as a sample so solvers can see an example.',
+          ? `${facts.sampleCount} sample testcase(s) shown to solvers.`
+          : 'Mark at least one testcase as a sample so solvers can see an example.',
     },
     {
       key: 'solution',
