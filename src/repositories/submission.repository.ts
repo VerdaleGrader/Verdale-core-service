@@ -1,8 +1,9 @@
 import { Language, SubmissionStatus, TestVerdict, Verdict } from '../../generated/prisma/enums';
 import { Db, Prisma } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
 const FOR_DISPLAY = {
-  user: { select: { username: true, display_name: true } },
+  user: { select: PUBLIC_USER_SELECT },
   problem: { select: { slug: true, space_id: true, status: true } },
   version: { select: { title: true } },
 } as const;
@@ -18,6 +19,13 @@ export interface SubmissionResultInput {
   signal: number | null;
   stdout_preview: string | null;
   checker_message: string | null;
+  /** What the program printed, kept for staff only (GRD-93); null when Judge sent none. */
+  output?: {
+    stdout: string | null;
+    stdout_size_bytes: number | null;
+    stderr: string | null;
+    stderr_size_bytes: number | null;
+  } | null;
 }
 
 export interface SubmissionCompletion {
@@ -38,6 +46,7 @@ export default class SubmissionRepository {
     data: {
       user_id: string;
       problem_id: string;
+      track_id?: string | null;
       problem_version_id: string;
       language: Language;
       source: string;
@@ -63,6 +72,11 @@ export default class SubmissionRepository {
   /** Locks the row until the transaction ends; result callbacks and re-judges take turns. */
   async lock(db: Db, id: string): Promise<void> {
     await db.$queryRaw`SELECT id FROM submissions WHERE id = ${id}::uuid FOR UPDATE`;
+  }
+
+  /** How many submissions this person made of this problem (any version). */
+  countByUser(db: Db, problemId: string, userId: string) {
+    return db.submission.count({ where: { problem_id: problemId, user_id: userId } });
   }
 
   async list(db: Db, filter: { problemId: string; userId?: string; skip: number; take: number }) {
@@ -157,10 +171,16 @@ export default class SubmissionRepository {
     return db.submissionTestResult.deleteMany({ where: { submission_id: submissionId } });
   }
 
-  createResults(db: Db, submissionId: string, results: SubmissionResultInput[]) {
-    return db.submissionTestResult.createMany({
-      data: results.map((result) => ({ ...result, submission_id: submissionId })),
-    });
+  async createResults(db: Db, submissionId: string, results: SubmissionResultInput[]) {
+    for (const { output, ...result } of results) {
+      await db.submissionTestResult.create({
+        data: {
+          ...result,
+          submission_id: submissionId,
+          ...(output ? { output: { create: output } } : {}),
+        },
+      });
+    }
   }
 }
 

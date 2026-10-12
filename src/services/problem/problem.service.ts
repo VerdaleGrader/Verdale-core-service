@@ -36,7 +36,9 @@ import {
   toVersionDto,
 } from '@/services/problem/problem.mapper';
 import { PublishCheck, buildPublishChecks } from '@/services/problem/publish-checks';
-import { SpaceAccess, assertCan } from '@/services/space/space.access';
+import { SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/space/space.access';
+import { can } from '@/permissions/can';
+import CatalogRepository from '@/repositories/catalog.repository';
 import SpaceService from '@/services/space/space.service';
 import { Page } from '@/services/space/space.mapper';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
@@ -53,6 +55,7 @@ export interface CreateProblemInput {
 export interface UpdateProblemInput {
   title?: string;
   statement?: string;
+  statement_mode?: 'markdown' | 'pdf';
   time_limit_ms?: number;
   memory_limit_kb?: number;
   allowed_languages?: string[];
@@ -73,6 +76,9 @@ export interface ProblemDto {
   space: { name: string; slug: string };
   title: string;
   statement: string;
+  statement_mode: 'markdown' | 'pdf';
+  /** Present in PDF mode: fetch it from GET .../statement.pdf. */
+  statement_pdf: { size_bytes: number; pages: number } | null;
   version_number: number;
   time_limit_ms: number;
   memory_limit_kb: number;
@@ -108,6 +114,7 @@ export default class ProblemService {
     private readonly problems: ProblemRepository,
     private readonly tests: TestCaseRepository,
     private readonly solutions: SolutionRepository,
+    private readonly catalog: CatalogRepository,
     private readonly spaceService: SpaceService,
     private readonly testStorage: FileStorage,
     private readonly now: () => Date = () => new Date()
@@ -170,9 +177,12 @@ export default class ProblemService {
       access.space.archived_at === null;
     const checks = buildPublishChecks({
       statement: version.statement,
+      statementMode: version.statement_mode,
+      hasStatementPdf: version.statement_pdf_sha256 !== null,
       languageCount: version.allowed_languages.length,
       testCount: testStats.count,
       sampleCount: testStats.sample_count,
+      missingOutputCount: testStats.missing_output_count,
       hasPrimarySolution: solutionStats.has_primary,
     });
     return {
@@ -204,6 +214,7 @@ export default class ProblemService {
     const access = await this.spaceService.load(this.prisma, slug, user);
     assertCan(user, 'space.view', access);
     const author = isAuthor(user, access);
+    // Outside the staff only problems reachable through a Track are listed (GRD-81).
     const statuses: ProblemStatusName[] = author
       ? input.status === 'all'
         ? ['draft', 'published', 'archived']
@@ -214,6 +225,7 @@ export default class ProblemService {
       q: input.q,
       statuses,
       createdById: author && input.mine && user ? user.id : undefined,
+      visibleTo: author ? undefined : { userId: user?.id ?? null },
       skip: (input.page - 1) * input.page_size,
       take: input.page_size,
     });
@@ -228,10 +240,9 @@ export default class ProblemService {
   /** What a solver sees: the statement, limits, languages and the sample tests, nothing else. */
   async get(user: User | null, slug: string, problemSlug: string): Promise<ProblemDto> {
     const { access, problem } = await this.loadForReader(this.prisma, user, slug, problemSlug);
-    // A draft is invisible to everyone but owners and editors, who see a preview of it.
-    if (problem.status === 'draft' && !isAuthor(user, access)) {
-      throw new NotFoundError('Problem not found.');
-    }
+    // A draft is invisible to everyone but the staff, who see a preview of it. Everyone
+    // else needs the problem to be reachable through a Track they can access (GRD-81).
+    await this.assertVisible(user, access, problem);
     const version = currentVersionOf(problem);
     const samples = await this.readSamples(version.id);
     return {
@@ -240,7 +251,15 @@ export default class ProblemService {
       status: problem.status,
       space: { name: access.space.name, slug: access.space.slug },
       title: version.title,
-      statement: version.statement,
+      statement: version.statement_mode === 'pdf' ? '' : version.statement,
+      statement_mode: version.statement_mode,
+      statement_pdf:
+        version.statement_mode === 'pdf' && version.statement_pdf_sha256
+          ? {
+              size_bytes: version.statement_pdf_size_bytes!,
+              pages: version.statement_pdf_pages!,
+            }
+          : null,
       version_number: version.version_number,
       time_limit_ms: version.time_limit_ms,
       memory_limit_kb: version.memory_limit_kb,
@@ -250,6 +269,29 @@ export default class ProblemService {
       created_by: toPublicUser(problem.created_by),
       published_at: version.published_at?.toISOString() ?? null,
     };
+  }
+
+  /**
+   * 404 unless the caller may view this problem: staff see all of them, everybody
+   * else only published or archived ones in a Collection of a Track they can reach.
+   * Returns whether the problem is reachable through a Track, which submitting needs.
+   */
+  async assertVisible(
+    user: User | null,
+    access: SpaceAccess,
+    problem: Pick<ProblemWithVersion, 'id' | 'status'>
+  ): Promise<boolean> {
+    const staff = isAuthor(user, access);
+    const inTrack = staff
+      ? true
+      : await this.catalog.isProblemVisible(this.prisma, problem.id, user?.id ?? null);
+    const allowed = can(
+      actorOf(user),
+      'problem.view',
+      resourceOf(access, { problemStatus: problem.status, problemInTrack: inTrack })
+    );
+    if (!allowed) throw new NotFoundError('Problem not found.');
+    return inTrack;
   }
 
   /** Content of the sample tests only. Hidden tests are never read here. */
@@ -262,9 +304,12 @@ export default class ProblemService {
           input: (
             await readAll((await this.testStorage.get(testFileKey(test.input_sha256))).body)
           ).toString('utf8'),
-          output: (
-            await readAll((await this.testStorage.get(testFileKey(test.output_sha256))).body)
-          ).toString('utf8'),
+          // A draft sample may still wait for its expected output; publishing needs it.
+          output: test.output_sha256
+            ? (
+                await readAll((await this.testStorage.get(testFileKey(test.output_sha256))).body)
+              ).toString('utf8')
+            : '',
         }))
       );
     } catch (error) {
@@ -442,9 +487,12 @@ export default class ProblemService {
       ]);
       const checks = buildPublishChecks({
         statement: draft!.statement,
+        statementMode: draft!.statement_mode,
+        hasStatementPdf: draft!.statement_pdf_sha256 !== null,
         languageCount: draft!.allowed_languages.length,
         testCount: testStats.count,
         sampleCount: testStats.sample_count,
+        missingOutputCount: testStats.missing_output_count,
         hasPrimarySolution: solutionStats.has_primary,
       });
       const failed = checks.filter((check) => !check.ok);

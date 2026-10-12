@@ -75,6 +75,8 @@ One namespace: lower-case, 3 to 32 characters, `[a-z0-9_-]`, starting with a let
 
 ¹ Not in an archived Space: an archived Space is read-only (problems stay visible; nothing created, edited, published or submitted; settings and members frozen). ² Except the last owner. ³ Decided in GRD-46: owners and editors see everyone's submissions in their Space, everyone else only their own. ⁴ Hidden tests, reference solutions and the editor view; readable by owners and editors in an archived Space too.
 
+The table predates the Administrator and Observer roles (GRD-96, GRD-97); the current rules are in `can.ts` and its tests. In short: **administrator** acts like an editor and also manages settings and members (never the owner); **observer** reads what an editor reads (hidden tests, reference solutions, drafts, every submission, the Space-wide submission pages, GRD-93) but changes nothing and cannot re-judge. A Space has exactly one owner.
+
 Public Space: a logged-in user can view and submit code. Private Space: members only. **Visitors can view public Spaces and published problems but must log in to submit** (decision 2026-10-11).
 
 ## Testing

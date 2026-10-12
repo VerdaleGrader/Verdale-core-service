@@ -1,10 +1,12 @@
 import { InviteStatus, SpaceRole } from '../../generated/prisma/enums';
 import { Db } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
 const WITH_SPACE = {
   space: { select: { id: true, name: true, slug: true, visibility: true, archived_at: true } },
-  created_by: { select: { username: true, display_name: true } },
-  invitee: { select: { username: true, display_name: true } },
+  track: { select: { id: true, name: true, slug: true, archived_at: true } },
+  created_by: { select: PUBLIC_USER_SELECT },
+  invitee: { select: PUBLIC_USER_SELECT },
 } as const;
 
 export default class InviteRepository {
@@ -12,6 +14,7 @@ export default class InviteRepository {
     db: Db,
     data: {
       space_id: string;
+      track_id?: string | null;
       created_by_id: string;
       invitee_id: string | null;
       token_hash: string;
@@ -30,9 +33,18 @@ export default class InviteRepository {
     return db.invite.findUnique({ where: { id }, include: WITH_SPACE });
   }
 
+  /** Invitations to the Space itself; Track invitations are listed with their Track. */
   listForSpace(db: Db, spaceId: string, now: Date) {
     return db.invite.findMany({
-      where: { space_id: spaceId, status: 'pending', expires_at: { gt: now } },
+      where: { space_id: spaceId, track_id: null, status: 'pending', expires_at: { gt: now } },
+      include: WITH_SPACE,
+      orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
+    });
+  }
+
+  listForTrack(db: Db, trackId: string, now: Date) {
+    return db.invite.findMany({
+      where: { track_id: trackId, status: 'pending', expires_at: { gt: now } },
       include: WITH_SPACE,
       orderBy: [{ created_at: 'desc' }, { id: 'asc' }],
     });
@@ -51,9 +63,22 @@ export default class InviteRepository {
     });
   }
 
-  findPendingForUser(db: Db, spaceId: string, userId: string, now: Date) {
+  /** A pending invitation to the Space itself (or, with a trackId, to that Track). */
+  findPendingForUser(
+    db: Db,
+    spaceId: string,
+    userId: string,
+    now: Date,
+    trackId: string | null = null
+  ) {
     return db.invite.findFirst({
-      where: { space_id: spaceId, invitee_id: userId, status: 'pending', expires_at: { gt: now } },
+      where: {
+        space_id: spaceId,
+        track_id: trackId,
+        invitee_id: userId,
+        status: 'pending',
+        expires_at: { gt: now },
+      },
     });
   }
 

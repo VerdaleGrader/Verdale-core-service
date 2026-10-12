@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../../generated/prisma/client';
+import type { PrismaClient, User } from '../../../generated/prisma/client';
 import type { AuthConfigurations } from '@/config';
 import { isValidIdentifier } from '@/constants/identifiers';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '@/errors';
@@ -16,6 +16,8 @@ import SessionRepository from '@/repositories/session.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import UserRepository from '@/repositories/user.repository';
 import { toSessionUser, SessionUser } from '@/services/user/user.mapper';
+import CatalogRepository from '@/repositories/catalog.repository';
+import { createInitialTrack } from '@/services/catalog/track.service';
 
 export interface OAuthStart {
   authorizeUrl: string;
@@ -70,6 +72,7 @@ export default class AuthService {
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
     private readonly spaces: SpaceRepository,
+    private readonly catalog: CatalogRepository,
     private readonly providers: OAuthProviders,
     private readonly config: AuthConfigurations,
     private readonly now: () => Date = () => new Date()
@@ -181,13 +184,13 @@ export default class AuthService {
 
   private async resolveUser(tx: Db, provider: OAuthProviderName, profile: OAuthProfile) {
     const linked = await this.users.findByOAuthAccount(tx, provider, profile.providerAccountId);
-    if (linked) return { user: linked, isNewUser: false };
+    if (linked) return { user: await this.refreshAvatar(tx, linked, profile), isNewUser: false };
 
     // Same verified e-mail seen through another provider: same person.
     const sameEmail = await this.users.findByEmail(tx, profile.email);
     if (sameEmail) {
       await this.users.linkOAuthAccount(tx, sameEmail.id, provider, profile.providerAccountId);
-      return { user: sameEmail, isNewUser: false };
+      return { user: await this.refreshAvatar(tx, sameEmail, profile), isNewUser: false };
     }
 
     const username = await this.freeUsername(tx, profile.usernameHint);
@@ -196,6 +199,7 @@ export default class AuthService {
       email: profile.email,
       username,
       display_name: displayName,
+      avatar_url: profile.avatarUrl ?? null,
     });
     await this.users.linkOAuthAccount(tx, user.id, provider, profile.providerAccountId);
 
@@ -209,7 +213,14 @@ export default class AuthService {
       is_personal: true,
     });
     await this.spaces.addMember(tx, space.id, user.id, 'owner');
+    await createInitialTrack(this.catalog, tx, space.id, user.id, undefined);
     return { user, isNewUser: true };
+  }
+
+  /** The picture is the provider's, refreshed at every sign-in (GRD-68). A provider without one changes nothing. */
+  private async refreshAvatar(tx: Db, user: User, profile: OAuthProfile): Promise<User> {
+    if (!profile.avatarUrl || profile.avatarUrl === user.avatar_url) return user;
+    return this.users.update(tx, user.id, { avatar_url: profile.avatarUrl });
   }
 
   private async freeUsername(tx: Db, hint: string): Promise<string> {

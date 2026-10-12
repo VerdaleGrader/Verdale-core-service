@@ -43,6 +43,8 @@ async function main() {
   }
   // Retries hand-overs to Judge that failed while it was down.
   app.dispatcher?.start();
+  // Keeps "generate expected output" jobs moving and removes old ones.
+  app.generator?.startLoop();
   if (Object.keys(config.auth.providers).length === 0) {
     logger.warn({ message: 'No OAuth provider is configured: nobody can log in' });
   }
@@ -60,6 +62,7 @@ async function main() {
     try {
       await app.close(); // stop accepting requests, finish in-flight ones
       await app.dispatcher?.stop(); // finish hand-overs to Judge that are under way
+      await app.generator?.stopLoop();
       await database.close();
       logger.info({ message: 'Shutdown complete' });
     } catch (error) {

@@ -1,8 +1,8 @@
 import type { Space } from '../../../generated/prisma/client';
 import { ForbiddenError, NotFoundError } from '@/errors';
-import { Action, Actor, Resource, can } from '@/permissions/can';
+import { Action, Actor, Resource, SpaceRoleName, can } from '@/permissions/can';
 
-export type Role = 'owner' | 'editor' | 'solver';
+export type Role = SpaceRoleName;
 
 export interface SpaceAccess {
   space: Space;
