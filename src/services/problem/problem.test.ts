@@ -635,7 +635,11 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
         'updated_at',
         'version_number',
       ]);
-      expect(items[0].created_by).toEqual({ username: 'edith', display_name: 'edith' });
+      expect(items[0].created_by).toEqual({
+        username: 'edith',
+        display_name: 'edith',
+        avatar_url: null,
+      });
     });
   });
 

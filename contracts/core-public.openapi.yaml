@@ -173,7 +173,7 @@ paths:
     get:
       operationId: getUser
       tags: [users]
-      summary: Public profile (username and display name only)
+      summary: Public profile (username, display name and picture only)
       parameters:
         - name: username
           in: path
@@ -1619,7 +1619,7 @@ components:
     Me:
       type: object
       description: The account owner's view. Other users never see `id` or `email`.
-      required: [id, email, username, display_name, created_at]
+      required: [id, email, username, display_name, avatar_url, created_at]
       properties:
         id:
           type: string
@@ -1632,6 +1632,12 @@ components:
         display_name:
           type: string
           maxLength: 64
+        avatar_url:
+          type: string
+          nullable: true
+          description: >-
+            The sign-in provider's profile picture (https URL), refreshed at every sign-in.
+            Null when the provider has none: show the initials of `display_name`.
         created_at:
           type: string
           format: date-time
@@ -1643,16 +1649,20 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+          description: Trimmed; no control characters. Rate limited (429).
         username:
           type: string
     PublicUser:
       type: object
-      required: [username, display_name]
+      required: [username, display_name, avatar_url]
       properties:
         username:
           type: string
         display_name:
           type: string
+        avatar_url:
+          type: string
+          nullable: true
     Space:
       type: object
       required:

@@ -1,8 +1,9 @@
 import { Language, SubmissionStatus, TestVerdict, Verdict } from '../../generated/prisma/enums';
 import { Db, Prisma } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
 const FOR_DISPLAY = {
-  user: { select: { username: true, display_name: true } },
+  user: { select: PUBLIC_USER_SELECT },
   problem: { select: { slug: true, space_id: true, status: true } },
   version: { select: { title: true } },
 } as const;

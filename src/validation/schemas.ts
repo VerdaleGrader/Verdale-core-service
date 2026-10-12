@@ -49,9 +49,17 @@ export const updateSpaceBody = z
     message: 'Send at least one field to change.',
   });
 
+/** A name people see: 1 to 64 characters, no control characters (new lines, NUL, ...). */
+const displayName = z
+  .string()
+  .trim()
+  .min(1, 'Enter a name.')
+  .max(64, 'Use at most 64 characters.')
+  .refine((value) => !/\p{Cc}/u.test(value), 'Remove control characters.');
+
 export const updateMeBody = z
   .object({
-    display_name: z.string().trim().min(1).max(64).optional(),
+    display_name: displayName.optional(),
     username: z.string().trim().min(1).max(64).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {

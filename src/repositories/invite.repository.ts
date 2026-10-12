@@ -1,10 +1,11 @@
 import { InviteStatus, SpaceRole } from '../../generated/prisma/enums';
 import { Db } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
 const WITH_SPACE = {
   space: { select: { id: true, name: true, slug: true, visibility: true, archived_at: true } },
-  created_by: { select: { username: true, display_name: true } },
-  invitee: { select: { username: true, display_name: true } },
+  created_by: { select: PUBLIC_USER_SELECT },
+  invitee: { select: PUBLIC_USER_SELECT },
 } as const;
 
 export default class InviteRepository {

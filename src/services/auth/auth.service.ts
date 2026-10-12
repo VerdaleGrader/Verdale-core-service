@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../../../generated/prisma/client';
+import type { PrismaClient, User } from '../../../generated/prisma/client';
 import type { AuthConfigurations } from '@/config';
 import { isValidIdentifier } from '@/constants/identifiers';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '@/errors';
@@ -181,13 +181,13 @@ export default class AuthService {
 
   private async resolveUser(tx: Db, provider: OAuthProviderName, profile: OAuthProfile) {
     const linked = await this.users.findByOAuthAccount(tx, provider, profile.providerAccountId);
-    if (linked) return { user: linked, isNewUser: false };
+    if (linked) return { user: await this.refreshAvatar(tx, linked, profile), isNewUser: false };
 
     // Same verified e-mail seen through another provider: same person.
     const sameEmail = await this.users.findByEmail(tx, profile.email);
     if (sameEmail) {
       await this.users.linkOAuthAccount(tx, sameEmail.id, provider, profile.providerAccountId);
-      return { user: sameEmail, isNewUser: false };
+      return { user: await this.refreshAvatar(tx, sameEmail, profile), isNewUser: false };
     }
 
     const username = await this.freeUsername(tx, profile.usernameHint);
@@ -196,6 +196,7 @@ export default class AuthService {
       email: profile.email,
       username,
       display_name: displayName,
+      avatar_url: profile.avatarUrl ?? null,
     });
     await this.users.linkOAuthAccount(tx, user.id, provider, profile.providerAccountId);
 
@@ -210,6 +211,12 @@ export default class AuthService {
     });
     await this.spaces.addMember(tx, space.id, user.id, 'owner');
     return { user, isNewUser: true };
+  }
+
+  /** The picture is the provider's, refreshed at every sign-in (GRD-68). A provider without one changes nothing. */
+  private async refreshAvatar(tx: Db, user: User, profile: OAuthProfile): Promise<User> {
+    if (!profile.avatarUrl || profile.avatarUrl === user.avatar_url) return user;
+    return this.users.update(tx, user.id, { avatar_url: profile.avatarUrl });
   }
 
   private async freeUsername(tx: Db, hint: string): Promise<string> {

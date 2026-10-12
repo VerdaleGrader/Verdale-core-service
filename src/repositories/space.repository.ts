@@ -1,5 +1,6 @@
 import { SpaceRole, SpaceVisibility } from '../../generated/prisma/enums';
 import { Db, Prisma } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
 export interface SpaceListFilter {
   q?: string;
@@ -85,7 +86,7 @@ export default class SpaceRepository {
   listMembers(db: Db, spaceId: string) {
     return db.membership.findMany({
       where: { space_id: spaceId },
-      include: { user: { select: { username: true, display_name: true } } },
+      include: { user: { select: PUBLIC_USER_SELECT } },
       orderBy: [{ joined_at: 'asc' }, { id: 'asc' }],
     });
   }

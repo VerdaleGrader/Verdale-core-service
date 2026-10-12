@@ -322,6 +322,8 @@ function registerApi(
     });
 
     const signInLimit = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
+    // Renaming yourself is rare; this only stops a script hammering it (GRD-68).
+    const profileLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
 
     await scope.register(
       async (v1) => {
@@ -339,7 +341,7 @@ function registerApi(
         v1.post('/auth/logout', authController.logout.bind(authController));
 
         v1.get('/me', userController.me.bind(userController));
-        v1.patch('/me', userController.updateMe.bind(userController));
+        v1.patch('/me', profileLimit, userController.updateMe.bind(userController));
         v1.get('/me/spaces', spaceController.listMine.bind(spaceController));
         v1.get('/me/invites', inviteController.listMine.bind(inviteController));
         v1.post('/me/invites/:inviteId/accept', inviteController.acceptById.bind(inviteController));

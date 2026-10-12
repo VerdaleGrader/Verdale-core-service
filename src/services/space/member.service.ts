@@ -77,9 +77,11 @@ export default class MemberService {
       message: 'member role changed',
       data: { spaceId: changed.space_id, targetUserId: changed.user_id, role },
     });
+    const target = await this.users.findById(this.prisma, changed.user_id);
     return {
       username: username.toLowerCase(),
-      display_name: (await this.users.findById(this.prisma, changed.user_id))?.display_name ?? '',
+      display_name: target?.display_name ?? '',
+      avatar_url: target?.avatar_url ?? null,
       role: changed.role as Role,
       joined_at: changed.joined_at.toISOString(),
     };

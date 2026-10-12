@@ -149,7 +149,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Public profile (username and display name only) */
+    /** Public profile (username, display name and picture only) */
     get: operations['getUser'];
     put?: never;
     post?: never;
@@ -894,16 +894,20 @@ export interface components {
       /** @description 3-32 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit */
       username: string;
       display_name: string;
+      /** @description The sign-in provider's profile picture (https URL), refreshed at every sign-in. Null when the provider has none: show the initials of `display_name`. */
+      avatar_url: string | null;
       /** Format: date-time */
       created_at: string;
     };
     UpdateMeRequest: {
+      /** @description Trimmed; no control characters. Rate limited (429). */
       display_name?: string;
       username?: string;
     };
     PublicUser: {
       username: string;
       display_name: string;
+      avatar_url: string | null;
     };
     Space: {
       /** Format: uuid */

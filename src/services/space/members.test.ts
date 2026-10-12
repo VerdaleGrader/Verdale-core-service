@@ -73,7 +73,11 @@ describeDb(
           username: 'Grace',
         });
         expect(created.status).toBe(201);
-        expect(created.body.invited_user).toEqual({ username: 'grace', display_name: 'grace' });
+        expect(created.body.invited_user).toEqual({
+          username: 'grace',
+          display_name: 'grace',
+          avatar_url: null,
+        });
         expect(created.body.link).toBeUndefined();
 
         const mine = await grace.request('GET', '/api/v1/me/invites');
