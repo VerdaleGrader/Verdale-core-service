@@ -32,7 +32,7 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
         editable: true,
         space: { slug: 'team' },
         version: { number: 1, status: 'draft', title: 'Sum of two numbers', published_at: null },
-        tests: { count: 0, sample_count: 0, total_bytes: 0 },
+        tests: { count: 0, sample_count: 0, missing_output_count: 0, total_bytes: 0 },
         solutions: { count: 0, has_primary: false },
         can_publish: false,
       });
@@ -752,6 +752,7 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
       expect(response.body.tests).toEqual({
         count: 2,
         sample_count: 1,
+        missing_output_count: 0,
         total_bytes: 4 + 2 + 6 + 3,
       });
       expect(

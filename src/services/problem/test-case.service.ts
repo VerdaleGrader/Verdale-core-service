@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { PrismaClient, TestCase, User } from '../../../generated/prisma/client';
 import { TEST_LIMITS } from '@/constants/limits';
@@ -8,6 +9,7 @@ import {
   StorageUnavailableError,
   testFileKey,
 } from '@/libs/storage/file-storage';
+import { SLICE_LIMITS, TextSlice, sliceText } from '@/libs/text-slice';
 import { NormalizedFile, TestFileError, formatBytes, normalizeTestFile } from '@/libs/test-file';
 import TLogger, { Layer } from '@/logging/logger';
 import { Db, isCheckViolation } from '@/repositories/db';
@@ -45,6 +47,47 @@ export interface TestCaseListDto {
   summary: TestSummaryDto;
   limits: TestLimitsDto;
   editable: boolean;
+  /**
+   * Changes whenever the testcases do. A save sends the one it started from, so
+   * two people editing at once cannot silently overwrite each other (409 TESTS_CHANGED).
+   */
+  revision: string;
+}
+
+/** A file that was checked, normalised and stored, ready to be used in a save. */
+export interface StagedFileDto {
+  sha256: string;
+  size_bytes: number;
+  total_lines: number;
+}
+
+export interface BatchTestInput {
+  /** An existing testcase; left out for a new one. */
+  id?: string;
+  is_sample: boolean;
+  /** Left out: unchanged for an existing testcase (required for a new one). */
+  input?: { sha256: string };
+  /** Left out: unchanged for an existing testcase, none for a new one. */
+  output?: { sha256: string };
+}
+
+export interface BatchSaveInput {
+  revision?: string;
+  /** The testcases the problem should have afterwards, in order. Those not listed are removed. */
+  tests: BatchTestInput[];
+}
+
+/** Identifies the testcases of a version: their order, files and visibility. */
+export function testsRevision(
+  rows: Array<Pick<TestCase, 'id' | 'position' | 'input_sha256' | 'output_sha256' | 'is_sample'>>
+): string {
+  const text = rows
+    .map(
+      (row) =>
+        `${row.id}|${row.position}|${row.input_sha256}|${row.output_sha256 ?? ''}|${row.is_sample}`
+    )
+    .join('\n');
+  return createHash('sha256').update(text).digest('hex').slice(0, 32);
 }
 
 type FileSide = 'input' | 'output';
@@ -84,7 +127,13 @@ export default class TestCaseService {
       this.tests.listByVersion(db, versionId),
       this.tests.stats(db, versionId),
     ]);
-    return { items: items.map(toTestCaseDto), summary, limits: testLimits(), editable };
+    return {
+      items: items.map(toTestCaseDto),
+      summary,
+      limits: testLimits(),
+      editable,
+      revision: testsRevision(items),
+    };
   }
 
   /** One file of a test, for the author to look at. */
@@ -106,6 +155,7 @@ export default class TestCaseService {
     const test = await this.tests.find(this.prisma, version.id, testId);
     if (!test) throw new NotFoundError('Test not found.');
     const sha = side === 'input' ? test.input_sha256 : test.output_sha256;
+    if (!sha) throw new NotFoundError('This testcase has no expected output yet.');
     try {
       const object = await this.storage.get(testFileKey(sha));
       return {
@@ -215,12 +265,12 @@ export default class TestCaseService {
         if (!current) throw new NotFoundError('Test not found.');
         const newBytes =
           (files.input?.size ?? current.input_size_bytes) +
-          (files.output?.size ?? current.output_size_bytes);
+          (files.output?.size ?? current.output_size_bytes ?? 0);
         const stats = await this.tests.stats(tx, version.id);
         this.assertRoom(
           stats,
           newBytes,
-          current.input_size_bytes + current.output_size_bytes,
+          current.input_size_bytes + (current.output_size_bytes ?? 0),
           false
         );
         const row = await this.tests.update(tx, testId, {
@@ -366,6 +416,256 @@ export default class TestCaseService {
     }
   }
 
+  // --- the whole page at once (GRD-108) -----------------------------------
+
+  /**
+   * Checks, normalises and stores one file so a later save can refer to it by
+   * its hash. Nothing in the problem changes: storage is content-addressed, so
+   * a file nobody uses is only an unreferenced object.
+   */
+  async stageFile(
+    user: User,
+    slug: string,
+    problemSlug: string,
+    file: UploadedFile
+  ): Promise<StagedFileDto> {
+    const { problem } = await this.problemService.loadForAuthor(
+      this.prisma,
+      user,
+      'problem.update',
+      slug,
+      problemSlug
+    );
+    await this.draftOrFail(this.prisma, problem);
+    let normalized: NormalizedFile;
+    try {
+      normalized = normalizeTestFile(file.bytes, { maxBytes: TEST_LIMITS.max_file_bytes });
+    } catch (error) {
+      if (!(error instanceof TestFileError)) throw error;
+      const label = file.filename ? `“${file.filename}”` : 'The file';
+      throw new ValidationError([{ field: 'file', message: `${label} ${error.reason}.` }]);
+    }
+    await this.store({ input: normalized });
+    return {
+      sha256: normalized.sha256,
+      size_bytes: normalized.size,
+      total_lines:
+        normalized.size === 0 ? 0 : normalized.bytes.toString('utf8').split('\n').length - 1,
+    };
+  }
+
+  /**
+   * Saves every change of the testcases page in one transaction: order,
+   * visibility, new testcases, removed ones, replaced files. Either all of it
+   * is saved or none (GRD-108). Files are referred to by hash, uploaded
+   * earlier with `stageFile` (or created by Generate).
+   */
+  async batchSave(
+    user: User,
+    slug: string,
+    problemSlug: string,
+    input: BatchSaveInput,
+    requestId: string
+  ): Promise<TestCaseListDto> {
+    const logger = this.logger.setContext('service.testCase.batchSave', requestId);
+    const { problem } = await this.problemService.loadForAuthor(
+      this.prisma,
+      user,
+      'problem.update',
+      slug,
+      problemSlug
+    );
+    const version = await this.draftOrFail(this.prisma, problem);
+
+    // Sizes of every file the request mentions; a file that was never uploaded is refused.
+    const wanted = new Set<string>();
+    for (const test of input.tests) {
+      if (test.input) wanted.add(test.input.sha256);
+      if (test.output) wanted.add(test.output.sha256);
+    }
+    const sizes = new Map<string, number>();
+    try {
+      for (const sha of wanted) {
+        const info = await this.storage.head(testFileKey(sha));
+        if (info) sizes.set(sha, info.size);
+      }
+    } catch (error) {
+      throw this.storageFailure(error, 'service.testCase.batchSave');
+    }
+
+    try {
+      const view = await this.prisma.$transaction(async (tx) => {
+        await this.problems.lock(tx, problem.id);
+        const fresh = (await this.problems.findById(tx, problem.id))!;
+        assertDraftEditable(fresh, await this.problems.findDraftVersion(tx, problem.id));
+        const current = await this.tests.listByVersion(tx, version.id);
+
+        if (input.revision && input.revision !== testsRevision(current)) {
+          throw new ConflictError(
+            'The testcases changed since you opened this page. Reload to see the latest, then make your changes again.',
+            'TESTS_CHANGED'
+          );
+        }
+        const byId = new Map(current.map((test) => [test.id, test]));
+        const seen = new Set<string>();
+        const problems: Array<{ field: string; message: string }> = [];
+
+        type Planned = {
+          existing: TestCase | null;
+          is_sample: boolean;
+          input_sha256: string;
+          input_size_bytes: number;
+          output_sha256: string | null;
+          output_size_bytes: number | null;
+        };
+        const planned: Planned[] = [];
+        for (const [index, test] of input.tests.entries()) {
+          const field = `tests[${index}]`;
+          const existing = test.id ? (byId.get(test.id) ?? null) : null;
+          if (test.id && !existing) {
+            problems.push({
+              field: `${field}.id`,
+              message: 'This testcase does not belong to this problem.',
+            });
+            continue;
+          }
+          if (existing) {
+            if (seen.has(existing.id)) {
+              problems.push({ field: `${field}.id`, message: 'List each testcase once.' });
+              continue;
+            }
+            seen.add(existing.id);
+          }
+          const resolve = (side: 'input' | 'output', ref?: { sha256: string }) => {
+            if (!ref) return undefined;
+            const size = sizes.get(ref.sha256);
+            if (size === undefined) {
+              problems.push({
+                field: `${field}.${side}`,
+                message: 'This file was not uploaded. Upload it first, then save.',
+              });
+              return undefined;
+            }
+            return { sha256: ref.sha256, size };
+          };
+          const newInput = resolve('input', test.input);
+          const newOutput = resolve('output', test.output);
+          if (!existing && !test.input) {
+            problems.push({ field: `${field}.input`, message: 'A new testcase needs an input.' });
+            continue;
+          }
+          planned.push({
+            existing,
+            is_sample: test.is_sample,
+            input_sha256: newInput?.sha256 ?? existing?.input_sha256 ?? '',
+            input_size_bytes: newInput?.size ?? existing?.input_size_bytes ?? 0,
+            output_sha256: newOutput?.sha256 ?? existing?.output_sha256 ?? null,
+            output_size_bytes: newOutput?.size ?? existing?.output_size_bytes ?? null,
+          });
+        }
+        if (problems.length > 0) throw new ValidationError(problems);
+
+        if (planned.length > TEST_LIMITS.max_count) {
+          throw new ConflictError(
+            `A problem can have at most ${TEST_LIMITS.max_count} tests.`,
+            'TEST_LIMIT_REACHED'
+          );
+        }
+        const samples = planned.filter((test) => test.is_sample);
+        if (samples.length > TEST_LIMITS.max_samples) throw sampleCountError();
+        for (const test of samples) {
+          const tooBig = [test.input_size_bytes, test.output_size_bytes ?? 0].find(
+            (size) => size > TEST_LIMITS.max_sample_bytes
+          );
+          if (tooBig !== undefined) {
+            throw new ConflictError(
+              `A sample can be at most ${formatBytes(TEST_LIMITS.max_sample_bytes)} (one is ${formatBytes(tooBig)}). Keep large testcases hidden.`,
+              'SAMPLE_TOO_LARGE'
+            );
+          }
+        }
+        const total = planned.reduce(
+          (sum, test) => sum + test.input_size_bytes + (test.output_size_bytes ?? 0),
+          0
+        );
+        if (total > TEST_LIMITS.max_total_bytes) {
+          throw new ConflictError(
+            `All tests together can be at most ${formatBytes(TEST_LIMITS.max_total_bytes)}.`,
+            'TEST_SIZE_LIMIT_REACHED'
+          );
+        }
+
+        for (const old of current.filter((test) => !seen.has(test.id))) {
+          await this.tests.delete(tx, old.id);
+        }
+        for (const [index, test] of planned.entries()) {
+          const data = {
+            position: index + 1,
+            is_sample: test.is_sample,
+            input_sha256: test.input_sha256,
+            input_size_bytes: test.input_size_bytes,
+            output_sha256: test.output_sha256,
+            output_size_bytes: test.output_size_bytes,
+          };
+          if (test.existing) {
+            const same =
+              test.existing.position === data.position &&
+              test.existing.is_sample === data.is_sample &&
+              test.existing.input_sha256 === data.input_sha256 &&
+              test.existing.output_sha256 === data.output_sha256;
+            if (!same) await this.tests.update(tx, test.existing.id, data);
+          } else {
+            await this.tests.create(tx, { problem_version_id: version.id, ...data });
+          }
+        }
+        await this.problems.touch(tx, problem.id);
+        return this.listView(tx, version.id, { editable: true });
+      });
+      logger.info({
+        message: 'tests saved',
+        data: { problemId: problem.id, count: view.items.length },
+      });
+      return view;
+    } catch (error) {
+      if (isCheckViolation(error)) throw versionPublishedError();
+      throw error;
+    }
+  }
+
+  /** A window of lines of one file of a testcase, for the preview and "View all". */
+  async slice(
+    user: User,
+    slug: string,
+    problemSlug: string,
+    testId: string,
+    side: FileSide,
+    window: { fromLine: number; maxLines: number }
+  ): Promise<TextSlice & { position: number; side: FileSide }> {
+    const { problem } = await this.problemService.loadForAuthor(
+      this.prisma,
+      user,
+      'problem.view_private',
+      slug,
+      problemSlug
+    );
+    const version = await this.problemService.editorVersion(this.prisma, problem);
+    const test = await this.tests.find(this.prisma, version.id, testId);
+    if (!test) throw new NotFoundError('Test not found.');
+    const sha = side === 'input' ? test.input_sha256 : test.output_sha256;
+    if (!sha) throw new NotFoundError('This testcase has no expected output yet.');
+    try {
+      const object = await this.storage.get(testFileKey(sha));
+      const slice = await sliceText(object.body, {
+        fromLine: window.fromLine,
+        maxLines: window.maxLines,
+        maxLineChars: SLICE_LIMITS.max_line_chars,
+      });
+      return { ...slice, position: test.position, side };
+    } catch (error) {
+      throw this.storageFailure(error, 'service.testCase.slice');
+    }
+  }
+
   // --- helpers ------------------------------------------------------------
 
   private async draftOrFail(
@@ -413,7 +713,7 @@ export default class TestCaseService {
   private assertFitsSample(test: TestCase) {
     for (const side of ['input', 'output'] as const) {
       const size = side === 'input' ? test.input_size_bytes : test.output_size_bytes;
-      if (size > TEST_LIMITS.max_sample_bytes) {
+      if (size !== null && size > TEST_LIMITS.max_sample_bytes) {
         throw new ConflictError(
           `The ${side} file is ${formatBytes(size)}, too large for a sample (at most ${formatBytes(TEST_LIMITS.max_sample_bytes)}).`,
           'SAMPLE_TOO_LARGE'

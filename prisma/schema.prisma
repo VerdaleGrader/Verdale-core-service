@@ -22,21 +22,22 @@ model User {
   created_at   DateTime @default(now()) @db.Timestamptz(3)
   updated_at   DateTime @updatedAt @db.Timestamptz(3)
 
-  oauth_accounts      OAuthAccount[]
-  sessions            Session[]
-  memberships         Membership[]
-  spaces_created      Space[]
-  invites_sent        Invite[]            @relation("InviteCreator")
-  invites_received    Invite[]            @relation("InviteInvitee")
-  track_memberships   TrackMember[]       @relation("TrackMemberUser")
-  track_members_added TrackMember[]       @relation("TrackMemberAdder")
-  tracks_created      Track[]
-  collections_created Collection[]
-  audit_actions       AuditEvent[]        @relation("AuditActor")
-  audit_targets       AuditEvent[]        @relation("AuditTarget")
-  problems_created    Problem[]
-  solutions_added     ReferenceSolution[]
-  submissions         Submission[]
+  oauth_accounts        OAuthAccount[]
+  sessions              Session[]
+  memberships           Membership[]
+  spaces_created        Space[]
+  invites_sent          Invite[]            @relation("InviteCreator")
+  invites_received      Invite[]            @relation("InviteInvitee")
+  track_memberships     TrackMember[]       @relation("TrackMemberUser")
+  track_members_added   TrackMember[]       @relation("TrackMemberAdder")
+  tracks_created        Track[]
+  generate_jobs_created GenerateJob[]       @relation("GenerateJobAuthor")
+  collections_created   Collection[]
+  audit_actions         AuditEvent[]        @relation("AuditActor")
+  audit_targets         AuditEvent[]        @relation("AuditTarget")
+  problems_created      Problem[]
+  solutions_added       ReferenceSolution[]
+  submissions           Submission[]
 
   @@map("users")
 }
@@ -237,6 +238,7 @@ model ProblemVersion {
   test_cases          TestCase[]
   reference_solutions ReferenceSolution[]
   submissions         Submission[]
+  generate_jobs       GenerateJob[]
 
   @@unique([problem_id, version_number])
   @@map("problem_versions")
@@ -250,15 +252,18 @@ model TestCase {
   // 1-based order; this is the order Judge runs the tests in.
   position           Int
   input_sha256       String   @db.VarChar(64)
-  output_sha256      String   @db.VarChar(64)
+  // Null while the expected output is still to be created (pasted without one,
+  // GRD-108); a version cannot be published until every test has one.
+  output_sha256      String?  @db.VarChar(64)
   input_size_bytes   Int
-  output_size_bytes  Int
+  output_size_bytes  Int?
   // Samples are shown to solvers (content and judging feedback); the rest are hidden.
   is_sample          Boolean  @default(false)
   created_at         DateTime @default(now()) @db.Timestamptz(3)
   updated_at         DateTime @updatedAt @db.Timestamptz(3)
 
-  version ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  version       ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  generate_runs GenerateRun[]
 
   @@index([problem_version_id, position])
   @@map("test_cases")
@@ -532,4 +537,78 @@ model AuditEvent {
 
   @@index([space_id, created_at(sort: Desc)])
   @@map("audit_events")
+}
+
+// --- Generating expected outputs from a solution (M3: GRD-108) -----------------
+//
+// One job per request, one run per testcase (so the web app can show progress,
+// stop, and keep what finished). Results are stored as content-addressed test
+// files and only become part of the problem when the author saves the page.
+
+enum GenerateJobStatus {
+  running
+  completed
+  stopped
+  timed_out
+  failed
+}
+
+enum GenerateRunStatus {
+  queued
+  running
+  done
+  failed
+}
+
+model GenerateJob {
+  id                 String            @id @default(uuid()) @db.Uuid
+  problem_version_id String            @db.Uuid
+  created_by_id      String            @db.Uuid
+  // The solution as it was when the job started.
+  language           Language
+  source             String
+  status             GenerateJobStatus @default(running)
+  // COMPILE_ERROR, JUDGE_UNAVAILABLE, ... when status = failed.
+  error_code         String?           @db.VarChar(64)
+  // First line of the compiler message, for the author.
+  error_message      String?           @db.VarChar(300)
+  deadline_at        DateTime          @db.Timestamptz(3)
+  created_at         DateTime          @default(now()) @db.Timestamptz(3)
+  finished_at        DateTime?         @db.Timestamptz(3)
+
+  version    ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  created_by User           @relation("GenerateJobAuthor", fields: [created_by_id], references: [id])
+  runs       GenerateRun[]
+
+  @@index([problem_version_id, status])
+  @@index([created_at])
+  @@map("generate_jobs")
+}
+
+model GenerateRun {
+  id                String            @id @default(uuid()) @db.Uuid
+  job_id            String            @db.Uuid
+  test_case_id      String            @db.Uuid
+  position          Int
+  status            GenerateRunStatus @default(queued)
+  judge_job_id      String?           @unique @db.Uuid
+  attempts          Int               @default(0)
+  next_dispatch_at  DateTime?         @db.Timestamptz(3)
+  // Judge's verdict for this test when it did not produce an output (TLE, MLE, RE, OLE, ISE).
+  verdict           TestVerdict?
+  time_ms           Int?
+  memory_kb         Int?
+  stderr            String?           @db.VarChar(4096)
+  output_sha256     String?           @db.VarChar(64)
+  output_size_bytes Int?
+  // Same as the current expected output, comparing the way Judge does.
+  same_as_current   Boolean?
+  error_code        String?           @db.VarChar(64)
+  finished_at       DateTime?         @db.Timestamptz(3)
+
+  job       GenerateJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  test_case TestCase    @relation(fields: [test_case_id], references: [id], onDelete: Cascade)
+
+  @@index([job_id, position])
+  @@map("generate_runs")
 }

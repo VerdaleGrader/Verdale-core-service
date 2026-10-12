@@ -6,6 +6,7 @@ import { verify } from '@/libs/hmac';
 import TLogger, { Layer } from '@/logging/logger';
 import SubmissionRepository, { SubmissionResultInput } from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import GenerateService from '@/services/problem/generate.service';
 
 const VERDICTS = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'OLE', 'ISE'] as const;
 const TEST_VERDICTS = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'OLE', 'ISE', 'SKIPPED'] as const;
@@ -88,6 +89,7 @@ export default class JudgeResultService {
     private readonly submissions: SubmissionRepository,
     private readonly tests: TestCaseRepository,
     private readonly callbackKeys: Record<string, string>,
+    private readonly generate: GenerateService,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -134,6 +136,21 @@ export default class JudgeResultService {
       throw unprocessable('The result does not match the contract.');
     }
     const result = parsed.data;
+    if (result.kind === 'generate') {
+      // Expected outputs being created from a solution (GRD-108), not a submission.
+      const known = await this.generate.receive(
+        {
+          job_id: result.job_id,
+          verdict: result.verdict,
+          compile: result.compile,
+          tests: result.tests,
+          error: result.error,
+        },
+        requestId
+      );
+      if (!known) throw new NotFoundError('Unknown job.');
+      return 'stored';
+    }
     if (result.kind !== 'submission') {
       throw unprocessable(`Core only accepts results of "submission" jobs, not "${result.kind}".`);
     }

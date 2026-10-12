@@ -176,6 +176,7 @@ export default class ProblemService {
       languageCount: version.allowed_languages.length,
       testCount: testStats.count,
       sampleCount: testStats.sample_count,
+      missingOutputCount: testStats.missing_output_count,
       hasPrimarySolution: solutionStats.has_primary,
     });
     return {
@@ -289,9 +290,12 @@ export default class ProblemService {
           input: (
             await readAll((await this.testStorage.get(testFileKey(test.input_sha256))).body)
           ).toString('utf8'),
-          output: (
-            await readAll((await this.testStorage.get(testFileKey(test.output_sha256))).body)
-          ).toString('utf8'),
+          // A draft sample may still wait for its expected output; publishing needs it.
+          output: test.output_sha256
+            ? (
+                await readAll((await this.testStorage.get(testFileKey(test.output_sha256))).body)
+              ).toString('utf8')
+            : '',
         }))
       );
     } catch (error) {
@@ -472,6 +476,7 @@ export default class ProblemService {
         languageCount: draft!.allowed_languages.length,
         testCount: testStats.count,
         sampleCount: testStats.sample_count,
+        missingOutputCount: testStats.missing_output_count,
         hasPrimarySolution: solutionStats.has_primary,
       });
       const failed = checks.filter((check) => !check.ok);

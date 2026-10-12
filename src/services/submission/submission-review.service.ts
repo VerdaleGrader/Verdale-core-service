@@ -782,7 +782,7 @@ export default class SubmissionReviewService {
       exit_code: result.exit_code,
       signal: result.signal,
       input: want('input') ? await fromStorage(caseRow?.input_sha256) : null,
-      expected: want('expected') ? await fromStorage(caseRow?.output_sha256) : null,
+      expected: want('expected') ? await fromStorage(caseRow?.output_sha256 ?? undefined) : null,
       output: want('output')
         ? await fromText(result.output?.stdout, result.output?.stdout_size_bytes)
         : null,
