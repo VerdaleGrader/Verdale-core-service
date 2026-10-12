@@ -1,10 +1,30 @@
-import { ACTIONS, Action, Actor, Resource, SpaceRoleName, can } from '@/permissions/can';
+import {
+  ACTIONS,
+  Action,
+  Actor,
+  Resource,
+  SpaceRoleName,
+  can,
+  canAssignRole,
+  canRemoveMember,
+} from '@/permissions/can';
 
 const user: Actor = { userId: 'user-1' };
 type Visibility = 'public' | 'private';
 type Who = 'visitor' | 'outsider' | SpaceRoleName;
 
-const WHO: Who[] = ['visitor', 'outsider', 'solver', 'editor', 'owner'];
+const WHO: Who[] = [
+  'visitor',
+  'outsider',
+  'solver',
+  'observer',
+  'editor',
+  'administrator',
+  'owner',
+];
+const MEMBERS: Who[] = ['solver', 'observer', 'editor', 'administrator', 'owner'];
+const READERS: Who[] = ['observer', 'editor', 'administrator', 'owner'];
+const WRITERS: Who[] = ['editor', 'administrator', 'owner'];
 
 function build(who: Who, visibility: Visibility, archived: boolean, extra: Partial<Resource> = {}) {
   const actor: Actor = who === 'visitor' ? null : user;
@@ -50,7 +70,7 @@ function expectOnly(
 
 describe('can()', () => {
   it('covers every action in the table below', () => {
-    expect(ACTIONS).toHaveLength(16);
+    expect(ACTIONS).toHaveLength(20);
   });
 
   describe('space.view', () => {
@@ -58,175 +78,21 @@ describe('can()', () => {
       expectOnly('space.view', 'public', archived, WHO);
     });
     it.each([false, true])('private Space is for members only (archived=%s)', (archived) => {
-      expectOnly('space.view', 'private', archived, ['solver', 'editor', 'owner']);
+      expectOnly('space.view', 'private', archived, MEMBERS);
     });
   });
 
   describe('space.view_members', () => {
     it.each(['public', 'private'] as Visibility[])('members only in a %s Space', (visibility) => {
-      expectOnly('space.view_members', visibility, false, ['solver', 'editor', 'owner']);
+      expectOnly('space.view_members', visibility, false, MEMBERS);
     });
   });
 
-  describe.each(['space.update', 'space.archive', 'space.manage_members'] as Action[])(
-    '%s',
-    (action) => {
-      it.each(['public', 'private'] as Visibility[])('owner only in a %s Space', (visibility) => {
-        expectOnly(action, visibility, false, ['owner']);
-      });
-      it.each(['public', 'private'] as Visibility[])(
-        'nobody once a %s Space is archived',
-        (visibility) => {
-          expectOnly(action, visibility, true, []);
-        }
-      );
-    }
-  );
-
-  describe('space.leave', () => {
-    it.each([false, true])('any member, even when archived=%s', (archived) => {
-      expectOnly('space.leave', 'public', archived, ['solver', 'editor', 'owner']);
-      expectOnly('space.leave', 'private', archived, ['solver', 'editor', 'owner']);
-    });
-  });
-
-  describe('problem.view', () => {
-    it('a published problem in a visible Track follows Space visibility', () => {
-      const inTrack = { problemStatus: 'published', problemInTrack: true } as const;
-      expectOnly('problem.view', 'public', false, WHO, inTrack);
-      expectOnly('problem.view', 'public', true, WHO, inTrack);
-      expectOnly('problem.view', 'private', false, ['solver', 'editor', 'owner'], inTrack);
-    });
-    it('a problem that is in no Track the actor can see is for owners and editors only (GRD-81)', () => {
-      const notInTrack = { problemStatus: 'published', problemInTrack: false } as const;
-      expectOnly('problem.view', 'public', false, ['editor', 'owner'], notInTrack);
-      expectOnly('problem.view', 'private', false, ['editor', 'owner'], notInTrack);
-      expectOnly('problem.view', 'public', false, ['editor', 'owner'], {
-        problemStatus: 'published',
-      });
-    });
-    it('drafts are for owners and editors only, even inside a Track', () => {
-      const draft = { problemStatus: 'draft', problemInTrack: true } as const;
-      expectOnly('problem.view', 'public', false, ['editor', 'owner'], draft);
-      expectOnly('problem.view', 'private', false, ['editor', 'owner'], draft);
-    });
-  });
-
-  describe('problem.view_private (hidden tests, reference solutions, editor view)', () => {
+  describe.each(['space.update', 'space.manage_members'] as Action[])('%s', (action) => {
     it.each(['public', 'private'] as Visibility[])(
-      'owners and editors only in a %s Space',
+      'owner and administrator in a %s Space',
       (visibility) => {
-        expectOnly('problem.view_private', visibility, false, ['editor', 'owner']);
-      }
-    );
-    it.each(['public', 'private'] as Visibility[])(
-      'still readable by them once a %s Space is archived',
-      (visibility) => {
-        expectOnly('problem.view_private', visibility, true, ['editor', 'owner']);
-      }
-    );
-  });
-
-  describe.each(['problem.create', 'problem.update', 'problem.publish'] as Action[])(
-    '%s',
-    (action) => {
-      it.each(['public', 'private'] as Visibility[])(
-        'owners and editors in a %s Space',
-        (visibility) => {
-          expectOnly(action, visibility, false, ['editor', 'owner']);
-        }
-      );
-      it.each(['public', 'private'] as Visibility[])(
-        'nobody once a %s Space is archived',
-        (visibility) => {
-          expectOnly(action, visibility, true, []);
-        }
-      );
-    }
-  );
-
-  describe('submission.create', () => {
-    const inTrack = { problemInTrack: true };
-    it('public Space: any logged-in user, never a visitor', () => {
-      expectOnly(
-        'submission.create',
-        'public',
-        false,
-        ['outsider', 'solver', 'editor', 'owner'],
-        inTrack
-      );
-    });
-    it('private Space: members only', () => {
-      expectOnly('submission.create', 'private', false, ['solver', 'editor', 'owner'], inTrack);
-    });
-    it.each(['public', 'private'] as Visibility[])(
-      'nobody in an archived %s Space',
-      (visibility) => {
-        expectOnly('submission.create', visibility, true, [], inTrack);
-      }
-    );
-    it.each(['public', 'private'] as Visibility[])(
-      'only owners and editors when the problem is in no Track the actor can see (%s Space)',
-      (visibility) => {
-        expectOnly('submission.create', visibility, false, ['editor', 'owner'], {
-          problemInTrack: false,
-        });
-        expectOnly('submission.create', visibility, false, ['editor', 'owner']);
-      }
-    );
-  });
-
-  describe('track.view', () => {
-    const track = (visibility: 'space' | 'members', archived: boolean, isMember: boolean) => ({
-      track: { visibility, archived, isMember },
-    });
-    it('a Track open to the Space is visible to everyone who can see the Space', () => {
-      expectOnly('track.view', 'public', false, WHO, track('space', false, false));
-      expectOnly(
-        'track.view',
-        'private',
-        false,
-        ['solver', 'editor', 'owner'],
-        track('space', false, false)
-      );
-    });
-    it('a members-only Track is visible to owners, editors and its members', () => {
-      expectOnly(
-        'track.view',
-        'public',
-        false,
-        ['editor', 'owner'],
-        track('members', false, false)
-      );
-      expectOnly(
-        'track.view',
-        'private',
-        false,
-        ['editor', 'owner'],
-        track('members', false, false)
-      );
-      // Being a Track member only counts for someone who can see the Space at all.
-      expectOnly(
-        'track.view',
-        'private',
-        false,
-        ['solver', 'editor', 'owner'],
-        track('members', false, true)
-      );
-    });
-    it('an archived Track is visible to owners and editors only', () => {
-      expectOnly('track.view', 'public', false, ['editor', 'owner'], track('space', true, true));
-    });
-    it('no Track facts means no access for solvers', () => {
-      expectOnly('track.view', 'public', false, ['editor', 'owner']);
-    });
-  });
-
-  describe.each(['track.manage', 'track.manage_members'] as Action[])('%s', (action) => {
-    it.each(['public', 'private'] as Visibility[])(
-      'owners and editors in a %s Space',
-      (visibility) => {
-        expectOnly(action, visibility, false, ['editor', 'owner']);
+        expectOnly(action, visibility, false, ['administrator', 'owner']);
       }
     );
     it.each(['public', 'private'] as Visibility[])(
@@ -237,26 +103,229 @@ describe('can()', () => {
     );
   });
 
+  describe.each([
+    'space.change_visibility',
+    'space.archive',
+    'space.transfer_ownership',
+  ] as Action[])('%s (the dangerous ones)', (action) => {
+    it.each(['public', 'private'] as Visibility[])('owner only in a %s Space', (visibility) => {
+      expectOnly(action, visibility, false, ['owner']);
+    });
+    it.each(['public', 'private'] as Visibility[])(
+      'nobody once a %s Space is archived',
+      (visibility) => {
+        expectOnly(action, visibility, true, []);
+      }
+    );
+  });
+
+  describe('space.leave', () => {
+    it.each([false, true])('any member but the owner, even when archived=%s', (archived) => {
+      const leavers: Who[] = ['solver', 'observer', 'editor', 'administrator'];
+      expectOnly('space.leave', 'public', archived, leavers);
+      expectOnly('space.leave', 'private', archived, leavers);
+    });
+  });
+
+  describe('problem.view', () => {
+    const inTrack = { problemStatus: 'published', problemInTrack: true } as const;
+    const outsideTracks = { problemStatus: 'published', problemInTrack: false } as const;
+
+    it('published problems in a Track follow Space visibility', () => {
+      expectOnly('problem.view', 'public', false, WHO, inTrack);
+      expectOnly('problem.view', 'public', true, WHO, inTrack);
+      expectOnly('problem.view', 'private', false, MEMBERS, inTrack);
+    });
+    it('problems outside every Track the person can reach are for the staff only (GRD-81)', () => {
+      expectOnly('problem.view', 'public', false, READERS, outsideTracks);
+      expectOnly('problem.view', 'private', false, READERS, outsideTracks);
+      expectOnly('problem.view', 'public', false, READERS, { problemStatus: 'published' });
+    });
+    it('drafts are for the people who can read the editor view, even inside a Track', () => {
+      const draft = { problemStatus: 'draft', problemInTrack: true } as const;
+      expectOnly('problem.view', 'public', false, READERS, draft);
+      expectOnly('problem.view', 'private', false, READERS, draft);
+    });
+  });
+
+  describe('problem.view_private (hidden tests, reference solutions, editor view)', () => {
+    it.each(['public', 'private'] as Visibility[])(
+      'owner, administrator, editor and observer in a %s Space',
+      (visibility) => {
+        expectOnly('problem.view_private', visibility, false, READERS);
+      }
+    );
+    it.each(['public', 'private'] as Visibility[])(
+      'still readable by them once a %s Space is archived',
+      (visibility) => {
+        expectOnly('problem.view_private', visibility, true, READERS);
+      }
+    );
+  });
+
+  describe.each(['problem.create', 'problem.update', 'problem.publish'] as Action[])(
+    '%s',
+    (action) => {
+      it.each(['public', 'private'] as Visibility[])(
+        'owner, administrator and editor in a %s Space; the observer changes nothing',
+        (visibility) => {
+          expectOnly(action, visibility, false, WRITERS);
+        }
+      );
+      it.each(['public', 'private'] as Visibility[])(
+        'nobody once a %s Space is archived',
+        (visibility) => {
+          expectOnly(action, visibility, true, []);
+        }
+      );
+    }
+  );
+
+  describe('track.view', () => {
+    const track = (visibility: 'space' | 'members', archived: boolean, isMember: boolean) => ({
+      track: { visibility, archived, isMember },
+    });
+    it('a Track open to the Space is visible to everyone who can see the Space', () => {
+      expectOnly('track.view', 'public', false, WHO, track('space', false, false));
+      expectOnly('track.view', 'private', false, MEMBERS, track('space', false, false));
+    });
+    it('a members-only Track is visible to the staff and its members', () => {
+      expectOnly('track.view', 'public', false, READERS, track('members', false, false));
+      expectOnly('track.view', 'private', false, READERS, track('members', false, false));
+      // Being a Track member only counts for someone who can see the Space at all.
+      expectOnly('track.view', 'private', false, MEMBERS, track('members', false, true));
+    });
+    it('an archived Track is visible to the staff only', () => {
+      expectOnly('track.view', 'public', false, READERS, track('space', true, true));
+    });
+    it('no Track facts means no access for solvers', () => {
+      expectOnly('track.view', 'public', false, READERS);
+    });
+  });
+
+  describe.each(['track.manage', 'track.manage_members'] as Action[])('%s', (action) => {
+    it.each(['public', 'private'] as Visibility[])(
+      'owner, administrator and editor in a %s Space',
+      (visibility) => {
+        expectOnly(action, visibility, false, WRITERS);
+      }
+    );
+    it.each(['public', 'private'] as Visibility[])(
+      'nobody once a %s Space is archived',
+      (visibility) => {
+        expectOnly(action, visibility, true, []);
+      }
+    );
+  });
+
+  describe('track.view_progress (other people’s progression)', () => {
+    it.each(['public', 'private'] as Visibility[])(
+      'the staff, observers included, in a %s Space',
+      (visibility) => {
+        expectOnly('track.view_progress', visibility, false, READERS);
+        expectOnly('track.view_progress', visibility, true, READERS);
+      }
+    );
+  });
+
+  describe('submission.create', () => {
+    it('public Space: any logged-in user, never a visitor', () => {
+      expectOnly(
+        'submission.create',
+        'public',
+        false,
+        ['outsider', 'solver', 'observer', 'editor', 'administrator', 'owner'],
+        { problemInTrack: true }
+      );
+    });
+    it('private Space: members only', () => {
+      expectOnly('submission.create', 'private', false, MEMBERS, { problemInTrack: true });
+    });
+    it('without a Track that reaches the problem, only the staff can submit (GRD-81)', () => {
+      expectOnly('submission.create', 'public', false, READERS, { problemInTrack: false });
+      expectOnly('submission.create', 'public', false, READERS);
+    });
+    it.each(['public', 'private'] as Visibility[])(
+      'nobody in an archived %s Space',
+      (visibility) => {
+        expectOnly('submission.create', visibility, true, [], { problemInTrack: true });
+      }
+    );
+  });
+
   describe('submission.view', () => {
     const someoneElse = { submissionAuthorId: 'user-2' };
     const mine = { submissionAuthorId: 'user-1' };
 
     it('own submissions: anyone logged in who can see the Space', () => {
-      expectOnly(
-        'submission.view',
-        'public',
-        false,
-        ['outsider', 'solver', 'editor', 'owner'],
-        mine
-      );
-      expectOnly('submission.view', 'private', false, ['solver', 'editor', 'owner'], mine);
+      expectOnly('submission.view', 'public', false, ['outsider', ...MEMBERS], mine);
+      expectOnly('submission.view', 'private', false, MEMBERS, mine);
     });
-    it("other people's submissions: owners and editors only", () => {
-      expectOnly('submission.view', 'public', false, ['editor', 'owner'], someoneElse);
-      expectOnly('submission.view', 'private', false, ['editor', 'owner'], someoneElse);
+    it("other people's submissions: owner, administrator, editor and observer", () => {
+      expectOnly('submission.view', 'public', false, READERS, someoneElse);
+      expectOnly('submission.view', 'private', false, READERS, someoneElse);
     });
     it('archived Spaces keep submissions readable', () => {
-      expectOnly('submission.view', 'public', true, ['editor', 'owner'], someoneElse);
+      expectOnly('submission.view', 'public', true, READERS, someoneElse);
     });
+  });
+
+  describe('submission.view_all (the Space-wide submission list, GRD-93)', () => {
+    it.each(['public', 'private'] as Visibility[])(
+      'owner, administrator, editor and observer in a %s Space',
+      (visibility) => {
+        expectOnly('submission.view_all', visibility, false, READERS);
+        expectOnly('submission.view_all', visibility, true, READERS);
+      }
+    );
+  });
+});
+
+describe('canAssignRole() and canRemoveMember() (GRD-96)', () => {
+  const ROLES: SpaceRoleName[] = ['owner', 'administrator', 'editor', 'observer', 'solver'];
+
+  it('the owner can invite or move anyone else to any role; ownership moves by handover', () => {
+    for (const from of [null, 'administrator', 'editor', 'observer', 'solver'] as const) {
+      for (const to of ROLES) expect(canAssignRole('owner', from, to)).toBe(true);
+    }
+    expect(canAssignRole('owner', 'owner', 'editor')).toBe(false);
+  });
+
+  it('an administrator manages editors, observers and solvers only', () => {
+    for (const from of [null, 'editor', 'observer', 'solver'] as const) {
+      expect(canAssignRole('administrator', from, 'editor')).toBe(true);
+      expect(canAssignRole('administrator', from, 'observer')).toBe(true);
+      expect(canAssignRole('administrator', from, 'solver')).toBe(true);
+      expect(canAssignRole('administrator', from, 'administrator')).toBe(false);
+      expect(canAssignRole('administrator', from, 'owner')).toBe(false);
+    }
+    expect(canAssignRole('administrator', 'administrator', 'editor')).toBe(false);
+    expect(canAssignRole('administrator', 'owner', 'editor')).toBe(false);
+  });
+
+  it('nobody else assigns roles', () => {
+    for (const actor of ['editor', 'observer', 'solver', null] as const) {
+      for (const to of ROLES) expect(canAssignRole(actor, null, to)).toBe(false);
+    }
+  });
+
+  it('removal follows the same ladder; the owner is never removed', () => {
+    expect(ROLES.map((role) => canRemoveMember('owner', role))).toEqual([
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(ROLES.map((role) => canRemoveMember('administrator', role))).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    for (const actor of ['editor', 'observer', 'solver', null] as const) {
+      for (const role of ROLES) expect(canRemoveMember(actor, role)).toBe(false);
+    }
   });
 });

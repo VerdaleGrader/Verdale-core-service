@@ -50,10 +50,11 @@ One namespace: lower-case, 3 to 32 characters, `[a-z0-9_-]`, starting with a let
 
 ## Spaces and membership
 
-- `spaces`: `created_by_id` (the creator; never changes), name, slug (never changes), description, visibility, `is_personal`, `archived_at`. "Owner" is a role: any number of members can be owners, and ownership can move.
-- `memberships`: (space, user) unique, role owner / editor / solver.
-- `invites`: SHA-256 of the token, role (editor or solver, never owner), optional invitee, status, `expires_at`. Expiry is computed from `expires_at`, never stored.
-- **Last owner:** services refuse to remove, demote or let the last owner leave (409), serialising concurrent changes with a row lock on the Space. A deferred constraint trigger in the database enforces the same rule at commit, so no code path can leave a Space without an owner.
+- `spaces`: `created_by_id` (the creator; never changes), name, slug (never changes), description, visibility, `is_personal`, `archived_at`. The owner is the one membership with role `owner` (exactly one per Space); ownership is handed over by making another member the owner (the old owner becomes an administrator).
+- `memberships`: (space, user) unique, role owner / administrator / editor / observer / solver (one `owner` per Space: a partial unique index).
+- `invites`: SHA-256 of the token, role (administrator, editor, observer or solver, never owner), optional invitee, status, `expires_at`. Expiry is computed from `expires_at`, never stored.
+- **Exactly one owner:** services refuse to remove or demote the owner or let them leave (409; hand the Space over first), serialising concurrent changes with a row lock on the Space. The unique index forbids a second owner and a deferred constraint trigger forbids none at commit, so no code path can leave a Space without or with two owners. When the migration introduced the rule, a Space with several owners kept its oldest owner and the others became administrators.
+- **Who may change whom** (`canAssignRole`, `canRemoveMember`): the owner anyone but themselves (making someone owner is the handover); an administrator editors, observers and solvers, never another administrator or the owner. Inviting follows the same rule. Visibility, archiving and handover are the owner's alone.
 - **Personal Space:** exactly one per user (partial unique index), created in the signup transaction, cannot be archived, and a trigger blocks deleting it.
 - A private Space answers **404**, not 403, to anyone who is not a member (its existence is not leaked). A visible Space where the action is not allowed answers 403.
 
@@ -61,23 +62,27 @@ One namespace: lower-case, 3 to 32 characters, `[a-z0-9_-]`, starting with a let
 
 `can(actor, action, resource)` is the only place that decides access. Callers load the facts (role, visibility, archived) and pass them in. Every cell of this table has a unit test (`src/permissions/can.test.ts`).
 
-| Action                                  | Visitor (not logged in)  | Logged-in, not a member  |    Solver     |    Editor    |    Owner     |
-| --------------------------------------- | :----------------------: | :----------------------: | :-----------: | :----------: | :----------: |
-| space.view                              |       public only        |       public only        |      yes      |     yes      |     yes      |
-| space.view_members                      |            no            |            no            |      yes      |     yes      |     yes      |
-| space.update / archive / manage_members |            no            |            no            |      no       |      no      |    yes ¹     |
-| space.leave                             |            no            |            no            |      yes      |     yes      |    yes ²     |
-| problem.view ⁵                          |  published, public only  |  published, public only  |   published   |     all      |     all      |
-| problem.view_private ⁴                  |            no            |            no            |      no       |     yes      |     yes      |
-| problem.create / update / publish       |            no            |            no            |      no       |    yes ¹     |    yes ¹     |
-| submission.create ⁵                     |     **no (log in)**      |    public Spaces only    |     yes ¹     |    yes ¹     |    yes ¹     |
-| submission.view                         |            no            |    own, public Spaces    |      own      | everyone's ³ | everyone's ³ |
-| track.view ⁶                            | open Tracks, public only | open Tracks, public only | open + joined |     all      |     all      |
-| track.manage / manage_members           |            no            |            no            |      no       |    yes ¹     |    yes ¹     |
+| Action                            | Visitor (not logged in)  | Logged-in, not a member  |    Solver     |   Observer   |    Editor    | Administrator |    Owner     |
+| --------------------------------- | :----------------------: | :----------------------: | :-----------: | :----------: | :----------: | :-----------: | :----------: |
+| space.view                        |       public only        |       public only        |      yes      |     yes      |     yes      |      yes      |     yes      |
+| space.view_members                |            no            |            no            |      yes      |     yes      |     yes      |      yes      |     yes      |
+| space.update / manage_members     |            no            |            no            |      no       |      no      |      no      |     yes ¹     |    yes ¹     |
+| space.change_visibility / archive |            no            |            no            |      no       |      no      |      no      |      no       |    yes ¹     |
+| space.transfer_ownership          |            no            |            no            |      no       |      no      |      no      |      no       |    yes ¹     |
+| space.leave                       |            no            |            no            |      yes      |     yes      |     yes      |      yes      |     no ²     |
+| problem.view ⁵                    |  published, public only  |  published, public only  |   published   |     all      |     all      |      all      |     all      |
+| problem.view_private ⁴            |            no            |            no            |      no       |     yes      |     yes      |      yes      |     yes      |
+| problem.create / update / publish |            no            |            no            |      no       |      no      |    yes ¹     |     yes ¹     |    yes ¹     |
+| submission.create ⁵               |     **no (log in)**      |    public Spaces only    |     yes ¹     |    yes ¹     |    yes ¹     |     yes ¹     |    yes ¹     |
+| submission.view                   |            no            |    own, public Spaces    |      own      | everyone's ³ | everyone's ³ | everyone's ³  | everyone's ³ |
+| submission.view_all (GRD-93)      |            no            |            no            |      no       |     yes      |     yes      |      yes      |     yes      |
+| track.view ⁶                      | open Tracks, public only | open Tracks, public only | open + joined |     all      |     all      |      all      |     all      |
+| track.manage / manage_members     |            no            |            no            |      no       |      no      |    yes ¹     |     yes ¹     |    yes ¹     |
+| track.view_progress (others')     |            no            |            no            |      no       |     yes      |     yes      |      yes      |     yes      |
 
-¹ Not in an archived Space: an archived Space is read-only (problems stay visible; nothing created, edited, published or submitted; settings and members frozen). ² Except the last owner. ³ Decided in GRD-46: owners and editors see everyone's submissions in their Space, everyone else only their own. ⁴ Hidden tests, reference solutions and the editor view; readable by owners and editors in an archived Space too.
+¹ Not in an archived Space: an archived Space is read-only (problems stay visible; nothing created, edited, published or submitted; settings and members frozen). ² The owner hands the Space over first. ³ Decided in GRD-46: the staff (owner, administrator, editor, observer) see everyone's submissions in their Space, everyone else only their own. ⁴ Hidden tests, reference solutions and the editor view; readable by the staff in an archived Space too. An **observer** is read-only staff: it reads what an editor reads but creates, edits, publishes and manages nothing, and cannot re-judge.
 
-⁵ Since GRD-81 a solver, an outsider of a public Space and a visitor reach a problem only through a Collection of a Track they can see (`problemInTrack`); owners and editors do not need one. Details and the exact 404 rules: [tracks.md](tracks.md). ⁶ A Track is visible when it is not archived and either open to the Space or the person was added to it; owners and editors see every Track, archived ones too.
+⁵ Since GRD-81 a solver, an outsider of a public Space and a visitor reach a problem only through a Collection of a Track they can see (`problemInTrack`); the staff do not need one. Details and the exact 404 rules: [tracks.md](tracks.md). ⁶ A Track is visible when it is not archived and either open to the Space or the person was added to it; the staff see every Track, archived ones too.
 
 Public Space: a logged-in user can view and submit code. Private Space: members only. **Visitors can view public Spaces and published problems but must log in to submit** (decision 2026-10-11).
 

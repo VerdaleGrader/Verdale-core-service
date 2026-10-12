@@ -74,9 +74,13 @@ enum SpaceVisibility {
   private
 }
 
+// Order of power: owner > administrator > editor > observer > solver.
+// A visitor or a signed-in non-member is a "viewer": not a stored role.
 enum SpaceRole {
   owner
+  administrator
   editor
+  observer
   solver
 }
 
@@ -89,8 +93,8 @@ enum InviteStatus {
 
 model Space {
   id            String          @id @default(uuid()) @db.Uuid
-  // Who created it. Owners are the memberships with role = owner (there can
-  // be several, and ownership can move); this column never changes.
+  // Who created it. The owner is the one membership with role = owner (exactly
+  // one; ownership can be handed over); this column never changes.
   created_by_id String          @db.Uuid
   name          String          @db.VarChar(80)
   // Lower-case; shares one namespace with usernames (a personal Space's slug
