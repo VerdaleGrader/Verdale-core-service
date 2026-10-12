@@ -13,6 +13,10 @@ export default class SpaceRepository {
     return db.space.findUnique({ where: { slug } });
   }
 
+  findById(db: Db, id: string) {
+    return db.space.findUnique({ where: { id } });
+  }
+
   /** Is this name taken as a Space slug or a username? One shared namespace. */
   async isIdentifierTaken(db: Db, identifier: string, exceptUserId?: string): Promise<boolean> {
     const [space, user] = await Promise.all([

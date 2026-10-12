@@ -50,7 +50,7 @@ function expectOnly(
 
 describe('can()', () => {
   it('covers every action in the table below', () => {
-    expect(ACTIONS).toHaveLength(12);
+    expect(ACTIONS).toHaveLength(13);
   });
 
   describe('space.view', () => {
@@ -102,6 +102,21 @@ describe('can()', () => {
       expectOnly('problem.view', 'public', false, ['editor', 'owner'], { problemStatus: 'draft' });
       expectOnly('problem.view', 'private', false, ['editor', 'owner'], { problemStatus: 'draft' });
     });
+  });
+
+  describe('problem.view_private (hidden tests, reference solutions, editor view)', () => {
+    it.each(['public', 'private'] as Visibility[])(
+      'owners and editors only in a %s Space',
+      (visibility) => {
+        expectOnly('problem.view_private', visibility, false, ['editor', 'owner']);
+      }
+    );
+    it.each(['public', 'private'] as Visibility[])(
+      'still readable by them once a %s Space is archived',
+      (visibility) => {
+        expectOnly('problem.view_private', visibility, true, ['editor', 'owner']);
+      }
+    );
   });
 
   describe.each(['problem.create', 'problem.update', 'problem.publish'] as Action[])(

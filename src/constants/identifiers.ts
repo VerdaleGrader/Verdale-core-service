@@ -41,3 +41,26 @@ export const RESERVED_IDENTIFIERS: ReadonlySet<string> = new Set([
 export function isValidIdentifier(value: string): boolean {
   return IDENTIFIER_PATTERN.test(value) && !RESERVED_IDENTIFIERS.has(value);
 }
+
+/**
+ * Problem slugs live inside a Space (/spaces/<space>/problems/<slug>), so they
+ * only have to avoid the words that are routes below a problem.
+ */
+export const PROBLEM_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+
+export const RESERVED_PROBLEM_SLUGS: ReadonlySet<string> = new Set([
+  'new',
+  'edit',
+  'editor',
+  'tests',
+  'solutions',
+  'submissions',
+  'images',
+  'publish',
+  'archive',
+  'settings',
+]);
+
+export function isValidProblemSlug(value: string): boolean {
+  return PROBLEM_SLUG_PATTERN.test(value) && !RESERVED_PROBLEM_SLUGS.has(value);
+}

@@ -5,3 +5,5 @@ coverage
 !.env.example
 /generated/prisma
 *.log
+# local file storage (STORAGE_DRIVER=local)
+.data

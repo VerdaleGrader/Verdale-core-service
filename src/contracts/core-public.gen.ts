@@ -451,6 +451,425 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/spaces/{slug}/problems': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Problems of a Space
+     * @description Visitors and solvers only ever see `published` problems, whatever `status` says.
+     *     Owners and editors can also list `draft` and `archived` problems, or `all`
+     *     (default `published`); `mine=true` keeps the ones they created.
+     *     A private Space answers 404 to everyone who is not a member.
+     */
+    get: operations['listProblems'];
+    put?: never;
+    /**
+     * Start a draft problem (owner or editor)
+     * @description Creates the problem with an empty draft (version 1). Fill it with `PATCH`.
+     *     Not allowed in an archived Space.
+     */
+    post: operations['createProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A problem as the solver sees it
+     * @description The statement, limits, allowed languages and the sample tests, nothing else:
+     *     hidden tests, reference solutions and internal data are never sent here.
+     *     A draft problem answers 404 unless the caller is an owner or editor of the Space,
+     *     who then sees exactly what solvers will see (a preview). Archived problems stay
+     *     readable but report `accepts_submissions: false`.
+     */
+    get: operations['getProblem'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete a draft problem (owner or editor)
+     * @description A problem that has been published cannot be deleted; archive it instead (409).
+     */
+    delete: operations['deleteProblem'];
+    options?: never;
+    head?: never;
+    /**
+     * Edit the draft (owner or editor)
+     * @description Changes title, statement, limits or allowed languages of the draft version.
+     *     A published version never changes: 409 `VERSION_PUBLISHED`.
+     *     Limits outside the ranges in `constraints` are refused with a `details` entry per field.
+     */
+    patch: operations['updateProblem'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/editor': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Everything the editor needs (owner or editor)
+     * @description The draft (or, when there is none, the current version), the numbers behind
+     *     the test and solution lists, the publish checklist and the allowed ranges.
+     *     Readable in an archived Space; `editable` says whether it can be changed.
+     */
+    get: operations['getProblemEditor'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/publish': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Publish the draft (owner or editor)
+     * @description Makes the draft the published, immutable version. Needs a statement, at least
+     *     one sample test, one test in total, one allowed language and a primary reference
+     *     solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
+     *     Provisional: Milestone 4 puts the verification run (reference solution against
+     *     every test on Judge) in front of this step.
+     */
+    post: operations['publishProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/archive': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archive a published problem (owner or editor)
+     * @description It stays readable but no longer accepts submissions. A never-published draft is deleted instead (409).
+     */
+    post: operations['archiveProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/images': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Upload a picture for the statement (owner or editor)
+     * @description `multipart/form-data` with one `file` part: png, jpeg or webp, at most `constraints.images.max_bytes`.
+     *     The type is read from the bytes, not the file name. The stored name is random.
+     *     Returns the public URL and a ready-to-paste Markdown image.
+     */
+    post: operations['uploadProblemImage'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/assets/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A statement picture
+     * @description Served by Core only when the public bucket has no public URL of its own
+     *     (`PUBLIC_ASSET_BASE_URL`), as in local development. Immutable and cacheable.
+     */
+    get: operations['getAsset'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Tests of the draft, with totals and limits (owner or editor) */
+    get: operations['listTestCases'];
+    put?: never;
+    /**
+     * Add a test at the end (owner or editor)
+     * @description `multipart/form-data` with parts `input` and `output` (files) and optional `is_sample`
+     *     (`true` or `false`). Both files are checked and normalised (see `TestCase`); the first
+     *     problem found is reported in `details` with the field `input` or `output`, naming the
+     *     file and the reason. Identical content is stored once. Only the draft can change.
+     */
+    post: operations['createTestCase'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/reorder': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Set the order of all tests (owner or editor)
+     * @description `test_ids` must list every test of the draft exactly once.
+     */
+    post: operations['reorderTestCases'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Replace the files of a test (owner or editor)
+     * @description `multipart/form-data` with `input` and/or `output` (files). Whatever is sent replaces
+     *     the current file; the position and `is_sample` stay.
+     */
+    put: operations['replaceTestCase'];
+    post?: never;
+    /**
+     * Remove a test (owner or editor)
+     * @description The remaining tests keep their order and are renumbered.
+     */
+    delete: operations['deleteTestCase'];
+    options?: never;
+    head?: never;
+    /** Mark a test as a sample or hidden (owner or editor) */
+    patch: operations['updateTestCase'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/input': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The input file of a test (owner or editor) */
+    get: operations['downloadTestInput'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/output': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The expected output file of a test (owner or editor) */
+    get: operations['downloadTestOutput'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/solutions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Reference solutions of the draft (owner or editor)
+     * @description Never sent to anyone else, in any endpoint.
+     */
+    get: operations['listReferenceSolutions'];
+    put?: never;
+    /**
+     * Attach a reference solution (owner or editor)
+     * @description The first solution becomes the primary one. Marking another as primary demotes the
+     *     previous primary. At most `constraints.solutions.max_count` per version.
+     */
+    post: operations['createReferenceSolution'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/solutions/{solutionId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove a reference solution (owner or editor)
+     * @description Removing the primary one leaves the version without a primary until another is chosen.
+     */
+    delete: operations['deleteReferenceSolution'];
+    options?: never;
+    head?: never;
+    /** Change a reference solution (owner or editor) */
+    patch: operations['updateReferenceSolution'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/submissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Submissions of a problem, newest first
+     * @description `scope=mine` (default) lists the caller's own. `scope=all` lists everyone's and is for
+     *     owners and editors only (403 for others).
+     */
+    get: operations['listSubmissions'];
+    put?: never;
+    /**
+     * Submit code
+     * @description Only for a published problem in a Space the caller can submit to: any logged-in user in a
+     *     public Space, members only in a private one, never in an archived Space. The language must
+     *     be one the problem allows and the source at most `constraints.source_max_bytes` bytes.
+     *     Answers 202 with the submission in status `queued` straight away; follow it with the
+     *     events stream or by polling. If Judge is unavailable the submission is kept and handed
+     *     over later. Limited to 10 submissions per minute per user (429 `RATE_LIMITED`).
+     */
+    post: operations['createSubmission'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/submissions/{submissionId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One submission with its source and per-test results
+     * @description Visible to its author, and to owners and editors of the Space (decision log, GRD-46).
+     *     Anyone else gets 404. Results never contain the content of a hidden test; previews
+     *     exist for sample tests only.
+     */
+    get: operations['getSubmission'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/submissions/{submissionId}/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Live status (Server-Sent Events)
+     * @description `text/event-stream`. The first event, `submission`, is the current state; another follows
+     *     every change; the stream ends after the final one. Each event's data is a `Submission`
+     *     without `source`. A comment line is sent every 15 s to keep proxies open, and
+     *     `retry: 3000` tells the browser to reconnect after 3 s; every connection starts with the
+     *     current state, so a dropped connection loses nothing. Clients without `EventSource`
+     *     can poll `getSubmission` instead.
+     */
+    get: operations['streamSubmission'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/submissions/{submissionId}/rejudge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check a submission again after a system error
+     * @description Only when the verdict is `ISE` (never the submitter's fault). The author or an owner
+     *     or editor of the Space can do it. Anything else is 409.
+     */
+    post: operations['rejudgeSubmission'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -567,6 +986,308 @@ export interface components {
       /** @enum {string} */
       status: 'accepted' | 'declined';
     };
+    /**
+     * @description Same codes as the Judge contract.
+     * @enum {string}
+     */
+    Language: 'c' | 'cpp' | 'python';
+    /**
+     * @description `draft` was never published; `published` is open to solvers; `archived` was
+     *     published and no longer accepts submissions.
+     * @enum {string}
+     */
+    ProblemStatus: 'draft' | 'published' | 'archived';
+    /** @enum {string} */
+    SubmissionStatus: 'queued' | 'running' | 'completed';
+    /**
+     * @description Overall verdict. AC accepted, WA wrong answer, TLE time limit exceeded, MLE memory limit
+     *     exceeded, RE runtime error, CE compilation error, OLE output limit exceeded, ISE internal
+     *     system error (never the submitter's fault; can be checked again).
+     * @enum {string}
+     */
+    Verdict: 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'CE' | 'OLE' | 'ISE';
+    /** @enum {string} */
+    TestVerdict: 'AC' | 'WA' | 'TLE' | 'MLE' | 'RE' | 'OLE' | 'ISE' | 'SKIPPED';
+    Range: {
+      min: number;
+      max: number;
+      default: number;
+    };
+    /** @description What the tests of one problem version may add up to. */
+    TestLimits: {
+      max_count: number;
+      /** @description Input plus output of every test, after normalising */
+      max_total_bytes: number;
+      /** @description Per input or output file, after normalising */
+      max_file_bytes: number;
+      /** @description Per file of a sample test, because samples are shown in the statement */
+      max_sample_bytes: number;
+      max_samples: number;
+    };
+    /** @description The ranges the editor must respect, so the web app never hard-codes them. */
+    ProblemConstraints: {
+      title_max_length: number;
+      statement_max_length: number;
+      time_limit_ms: components['schemas']['Range'];
+      memory_limit_kb: components['schemas']['Range'];
+      languages: components['schemas']['Language'][];
+      tests: components['schemas']['TestLimits'];
+      images: {
+        max_bytes: number;
+        content_types: string[];
+      };
+      solutions: {
+        max_count: number;
+      };
+      /** @description Submissions and reference solutions */
+      source_max_bytes: number;
+    };
+    CreateProblemRequest: {
+      /** @description 2-64 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit; not `new`, `edit` and similar words */
+      slug: string;
+      title: string;
+      /** @default  */
+      statement: string;
+      time_limit_ms?: number;
+      memory_limit_kb?: number;
+      allowed_languages?: components['schemas']['Language'][];
+    };
+    UpdateProblemRequest: {
+      title?: string;
+      statement?: string;
+      time_limit_ms?: number;
+      memory_limit_kb?: number;
+      allowed_languages?: components['schemas']['Language'][];
+    };
+    SpaceRef: {
+      name: string;
+      slug: string;
+    };
+    ProblemSummary: {
+      /** Format: uuid */
+      id: string;
+      slug: string;
+      title: string;
+      status: components['schemas']['ProblemStatus'];
+      /** @description The current version */
+      version_number: number;
+      time_limit_ms: number;
+      memory_limit_kb: number;
+      allowed_languages: components['schemas']['Language'][];
+      created_by: components['schemas']['PublicUser'];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      published_at: string | null;
+    };
+    ProblemPage: {
+      items: components['schemas']['ProblemSummary'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    SampleTest: {
+      /** @description 1-based, in judging order */
+      position: number;
+      input: string;
+      output: string;
+    };
+    /**
+     * @description What a solver may know about a problem. Deliberately has no test count, hidden test,
+     *     reference solution or author-only field.
+     */
+    Problem: {
+      /** Format: uuid */
+      id: string;
+      slug: string;
+      status: components['schemas']['ProblemStatus'];
+      space: components['schemas']['SpaceRef'];
+      title: string;
+      /** @description Markdown with `$...$` and `$$...$$` maths */
+      statement: string;
+      version_number: number;
+      time_limit_ms: number;
+      memory_limit_kb: number;
+      allowed_languages: components['schemas']['Language'][];
+      samples: components['schemas']['SampleTest'][];
+      /** @description Published, and its Space is not archived */
+      accepts_submissions: boolean;
+      created_by: components['schemas']['PublicUser'];
+      /** Format: date-time */
+      published_at: string | null;
+    };
+    ProblemVersion: {
+      /** Format: uuid */
+      id: string;
+      number: number;
+      /** @enum {string} */
+      status: 'draft' | 'published';
+      title: string;
+      statement: string;
+      time_limit_ms: number;
+      memory_limit_kb: number;
+      allowed_languages: components['schemas']['Language'][];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: date-time */
+      published_at: string | null;
+    };
+    PublishCheck: {
+      /** @enum {string} */
+      key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'solution';
+      ok: boolean;
+      /** @description What is needed (when not ok) or what is in place (when ok) */
+      message: string;
+    };
+    ProblemEditor: {
+      /** Format: uuid */
+      id: string;
+      slug: string;
+      status: components['schemas']['ProblemStatus'];
+      space: components['schemas']['SpaceRef'];
+      version: components['schemas']['ProblemVersion'];
+      /** @description The version is a draft, the problem is not archived and the Space is not archived */
+      editable: boolean;
+      created_by: components['schemas']['PublicUser'];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+      tests: components['schemas']['TestSummary'];
+      solutions: {
+        count: number;
+        has_primary: boolean;
+      };
+      publish_checks: components['schemas']['PublishCheck'][];
+      /** @description Every check is ok and the version is an editable draft */
+      can_publish: boolean;
+      constraints: components['schemas']['ProblemConstraints'];
+    };
+    ImageUpload: {
+      /** @description Absolute path or URL to put in the statement */
+      url: string;
+      /** @description `![](url)`, ready to insert */
+      markdown: string;
+      content_type: string;
+      size_bytes: number;
+    };
+    TestSummary: {
+      count: number;
+      sample_count: number;
+      total_bytes: number;
+    };
+    /**
+     * @description Input and expected output are stored as UTF-8 text, normalised on upload: a leading byte order mark is
+     *     removed, CRLF and lone CR become LF, trailing blank lines are removed and a non-empty file ends with
+     *     exactly one LF. Binary files (NUL or other control characters, invalid UTF-8) are refused.
+     *     The SHA-256 and sizes are of the normalised content.
+     */
+    TestCase: {
+      /** Format: uuid */
+      id: string;
+      /** @description 1-based; Judge runs the tests in this order */
+      position: number;
+      is_sample: boolean;
+      input_sha256: string;
+      output_sha256: string;
+      input_size_bytes: number;
+      output_size_bytes: number;
+      /** Format: date-time */
+      created_at: string;
+    };
+    TestCaseList: {
+      items: components['schemas']['TestCase'][];
+      summary: components['schemas']['TestSummary'];
+      limits: components['schemas']['TestLimits'];
+      editable: boolean;
+    };
+    ReferenceSolution: {
+      /** Format: uuid */
+      id: string;
+      language: components['schemas']['Language'];
+      source: string;
+      source_bytes: number;
+      is_primary: boolean;
+      created_by: components['schemas']['PublicUser'];
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CreateReferenceSolutionRequest: {
+      language: components['schemas']['Language'];
+      source: string;
+      /** @description Defaults to true for the first solution, false after that */
+      is_primary?: boolean;
+    };
+    UpdateReferenceSolutionRequest: {
+      language?: components['schemas']['Language'];
+      source?: string;
+      is_primary?: boolean;
+    };
+    CreateSubmissionRequest: {
+      language: components['schemas']['Language'];
+      /** @description UTF-8, at most 65536 bytes */
+      source: string;
+    };
+    SubmissionSummary: {
+      /** Format: uuid */
+      id: string;
+      problem: {
+        slug: string;
+        title: string;
+      };
+      space: components['schemas']['SpaceRef'];
+      author: components['schemas']['PublicUser'];
+      language: components['schemas']['Language'];
+      status: components['schemas']['SubmissionStatus'];
+      /** @description Set once `status` is `completed` */
+      verdict: components['schemas']['Verdict'] | null;
+      /** @description Slowest test that ran */
+      time_ms: number | null;
+      /** @description Largest peak memory of a test that ran */
+      memory_kb: number | null;
+      tests_passed: number | null;
+      tests_total: number | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      judged_at: string | null;
+    };
+    SubmissionPage: {
+      items: components['schemas']['SubmissionSummary'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    /**
+     * @description One test, in judging order. Hidden tests carry the verdict, time and memory and nothing
+     *     else; the previews exist for sample tests only.
+     */
+    SubmissionTestResult: {
+      position: number;
+      is_sample: boolean;
+      verdict: components['schemas']['TestVerdict'];
+      time_ms: number;
+      memory_kb: number;
+      stdout_preview?: string;
+      checker_message?: string;
+    };
+    Submission: components['schemas']['SubmissionSummary'] & {
+      /** @description Missing in the events stream */
+      source?: string;
+      /** @description Compiler output (at most 8192 characters) when the verdict is CE */
+      compile_message: string | null;
+      /** @description Why the verdict is ISE, e.g. `SANDBOX_FAILURE` or `JUDGE_UNAVAILABLE` */
+      error_code: string | null;
+      results: components['schemas']['SubmissionTestResult'][];
+      /** @description The verdict is ISE and the caller may ask for another check */
+      can_rejudge: boolean;
+    };
     HealthResponse: {
       /** @enum {string} */
       status: 'ok';
@@ -614,6 +1335,11 @@ export interface components {
     PageSize: number;
     /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
     Query: string;
+    /** @description Problem slug (case-insensitive), unique inside its Space */
+    ProblemSlug: string;
+    TestId: string;
+    SolutionId: string;
+    SubmissionId: string;
   };
   requestBodies: never;
   headers: never;
@@ -1335,6 +2061,844 @@ export interface operations {
       401: components['responses']['Error'];
       404: components['responses']['Error'];
       410: components['responses']['Error'];
+    };
+  };
+  listProblems: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        /** @description Case-insensitive search in the title and the slug */
+        q?: string;
+        /** @description Owners and editors only; ignored for everyone else */
+        status?: 'published' | 'draft' | 'archived' | 'all';
+        /** @description Owners and editors only; only problems I created */
+        mine?: boolean;
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of problems, newest change first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateProblemRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The problem */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Problem'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  deleteProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  updateProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateProblemRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getProblemEditor: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The editor view */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  publishProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Published */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  archiveProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archived */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemEditor'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  uploadProblemImage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Stored */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ImageUpload'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getAsset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The image */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'image/png': string;
+          'image/jpeg': string;
+          'image/webp': string;
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  listTestCases: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Tests in judging order */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCaseList'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createTestCase: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          input: string;
+          /** Format: binary */
+          output: string;
+          /** @default false */
+          is_sample?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Added */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCase'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  reorderTestCases: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          test_ids: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description The tests in their new order */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCaseList'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  replaceTestCase: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          input?: string;
+          /** Format: binary */
+          output?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Replaced */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCase'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  deleteTestCase: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  updateTestCase: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          is_sample: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TestCase'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  downloadTestInput: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The file, as stored */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/plain': string;
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  downloadTestOutput: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        testId: components['parameters']['TestId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The file, as stored */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/plain': string;
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listReferenceSolutions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Solutions, primary first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['ReferenceSolution'][];
+          };
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createReferenceSolution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateReferenceSolutionRequest'];
+      };
+    };
+    responses: {
+      /** @description Added */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReferenceSolution'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  deleteReferenceSolution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        solutionId: components['parameters']['SolutionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  updateReferenceSolution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        solutionId: components['parameters']['SolutionId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateReferenceSolutionRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReferenceSolution'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  listSubmissions: {
+    parameters: {
+      query?: {
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+        scope?: 'mine' | 'all';
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of submissions */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SubmissionPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createSubmission: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSubmissionRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SubmissionSummary'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      429: components['responses']['Error'];
+    };
+  };
+  getSubmission: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        submissionId: components['parameters']['SubmissionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The submission */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Submission'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  streamSubmission: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        submissionId: components['parameters']['SubmissionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Event stream */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/event-stream': string;
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  rejudgeSubmission: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        submissionId: components['parameters']['SubmissionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Queued again */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Submission'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      429: components['responses']['Error'];
     };
   };
 }

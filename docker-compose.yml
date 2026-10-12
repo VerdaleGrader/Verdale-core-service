@@ -52,6 +52,19 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Test files and pictures. To let Judge read them, mount the same directory
+      # in Judge as its storage (see README, "Running all three repos together").
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /data/storage
+      JUDGE_URL: ${JUDGE_URL:-http://host.docker.internal:8081}
+      JUDGE_KEY_ID: ${JUDGE_KEY_ID:-}
+      JUDGE_SECRET: ${JUDGE_SECRET:-}
+      JUDGE_CALLBACK_KEYS: ${JUDGE_CALLBACK_KEYS:-}
+      CORE_INTERNAL_URL: http://host.docker.internal:${CORE_PORT:-8080}
+    volumes:
+      - ${STORAGE_DIR:-./.data/storage}:/data/storage
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     ports:
       - '127.0.0.1:${CORE_PORT:-8080}:8080'
     depends_on:

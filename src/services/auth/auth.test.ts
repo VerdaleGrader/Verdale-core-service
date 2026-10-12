@@ -5,6 +5,7 @@ import {
   rawSetCookie,
   resetDatabase,
   TestApp,
+  testApiDependencies,
 } from '@/test/harness';
 import { safeRedirectPath, usernameCandidate } from '@/services/auth/auth.service';
 
@@ -264,7 +265,7 @@ describeDb('OAuth login (GRD-11)', () => {
     const app = unconfigured.buildApp({
       version: 't',
       readinessChecks: [],
-      api: { prisma: t.prisma, auth: config.auth, oauthProviders: {} },
+      api: testApiDependencies(t.prisma, config.auth, {}),
     });
     const response = await app.inject({ method: 'GET', url: '/api/v1/auth/oauth/github/start' });
     expect(response.statusCode).toBe(404);
@@ -303,6 +304,15 @@ describeDb('OAuth login (GRD-11)', () => {
         ENV: 'staging',
         BETTERSTACK_SOURCE_TOKEN: 't',
         SESSION_SECRET: 'x'.repeat(32),
+        STORAGE_DRIVER: 'r2',
+        R2_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
+        R2_ACCESS_KEY_ID: 'key',
+        R2_SECRET_ACCESS_KEY: 'secret',
+        R2_TESTS_BUCKET: 'tests',
+        R2_PUBLIC_BUCKET: 'public',
+        JUDGE_KEY_ID: 'core-staging',
+        JUDGE_SECRET: 'c'.repeat(40),
+        JUDGE_CALLBACK_KEYS: `judge-staging:${'j'.repeat(40)}`,
       });
       try {
         const ada = await staging.login({ providerAccountId: 'gh-1', email: 'ada@example.com' });

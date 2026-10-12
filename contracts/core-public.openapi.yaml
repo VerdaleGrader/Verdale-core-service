@@ -1,11 +1,11 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
-    Endpoints are added story by story: accounts and Spaces (M2), problems and
-    submissions (M3). Everything except `/health` and `/ready` lives under `/api/v1`,
+    Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
+    reference solutions and submissions (M3). Everything except `/health` and `/ready` lives under `/api/v1`,
     the prefix the web app proxies to Core.
 
     Every error uses `ErrorResponse`. Every response carries an
@@ -646,6 +646,861 @@ paths:
           $ref: '#/components/responses/Error'
         '410':
           $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems:
+    get:
+      operationId: listProblems
+      tags: [problems]
+      summary: Problems of a Space
+      description: |
+        Visitors and solvers only ever see `published` problems, whatever `status` says.
+        Owners and editors can also list `draft` and `archived` problems, or `all`
+        (default `published`); `mine=true` keeps the ones they created.
+        A private Space answers 404 to everyone who is not a member.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: q
+          in: query
+          description: Case-insensitive search in the title and the slug
+          schema:
+            type: string
+            maxLength: 80
+        - name: status
+          in: query
+          description: Owners and editors only; ignored for everyone else
+          schema:
+            type: string
+            enum: [published, draft, archived, all]
+            default: published
+        - name: mine
+          in: query
+          description: Owners and editors only; only problems I created
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: A page of problems, newest change first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createProblem
+      tags: [problems]
+      summary: Start a draft problem (owner or editor)
+      description: |
+        Creates the problem with an empty draft (version 1). Fill it with `PATCH`.
+        Not allowed in an archived Space.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProblemRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}:
+    get:
+      operationId: getProblem
+      tags: [problems]
+      summary: A problem as the solver sees it
+      description: |
+        The statement, limits, allowed languages and the sample tests, nothing else:
+        hidden tests, reference solutions and internal data are never sent here.
+        A draft problem answers 404 unless the caller is an owner or editor of the Space,
+        who then sees exactly what solvers will see (a preview). Archived problems stay
+        readable but report `accepts_submissions: false`.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: The problem
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateProblem
+      tags: [problems]
+      summary: Edit the draft (owner or editor)
+      description: |
+        Changes title, statement, limits or allowed languages of the draft version.
+        A published version never changes: 409 `VERSION_PUBLISHED`.
+        Limits outside the ranges in `constraints` are refused with a `details` entry per field.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProblemRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteProblem
+      tags: [problems]
+      summary: Delete a draft problem (owner or editor)
+      description: A problem that has been published cannot be deleted; archive it instead (409).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/editor:
+    get:
+      operationId: getProblemEditor
+      tags: [problems]
+      summary: Everything the editor needs (owner or editor)
+      description: |
+        The draft (or, when there is none, the current version), the numbers behind
+        the test and solution lists, the publish checklist and the allowed ranges.
+        Readable in an archived Space; `editable` says whether it can be changed.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: The editor view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/publish:
+    post:
+      operationId: publishProblem
+      tags: [problems]
+      summary: Publish the draft (owner or editor)
+      description: |
+        Makes the draft the published, immutable version. Needs a statement, at least
+        one sample test, one test in total, one allowed language and a primary reference
+        solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
+        Provisional: Milestone 4 puts the verification run (reference solution against
+        every test on Judge) in front of this step.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/archive:
+    post:
+      operationId: archiveProblem
+      tags: [problems]
+      summary: Archive a published problem (owner or editor)
+      description: It stays readable but no longer accepts submissions. A never-published draft is deleted instead (409).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/images:
+    post:
+      operationId: uploadProblemImage
+      tags: [problems]
+      summary: Upload a picture for the statement (owner or editor)
+      description: |
+        `multipart/form-data` with one `file` part: png, jpeg or webp, at most `constraints.images.max_bytes`.
+        The type is read from the bytes, not the file name. The stored name is random.
+        Returns the public URL and a ready-to-paste Markdown image.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageUpload'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/assets/{name}:
+    get:
+      operationId: getAsset
+      tags: [problems]
+      summary: A statement picture
+      description: |
+        Served by Core only when the public bucket has no public URL of its own
+        (`PUBLIC_ASSET_BASE_URL`), as in local development. Immutable and cacheable.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests:
+    get:
+      operationId: listTestCases
+      tags: [tests]
+      summary: Tests of the draft, with totals and limits (owner or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: Tests in judging order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCaseList'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTestCase
+      tags: [tests]
+      summary: Add a test at the end (owner or editor)
+      description: |
+        `multipart/form-data` with parts `input` and `output` (files) and optional `is_sample`
+        (`true` or `false`). Both files are checked and normalised (see `TestCase`); the first
+        problem found is reported in `details` with the field `input` or `output`, naming the
+        file and the reason. Identical content is stored once. Only the draft can change.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [input, output]
+              properties:
+                input:
+                  type: string
+                  format: binary
+                output:
+                  type: string
+                  format: binary
+                is_sample:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCase'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/reorder:
+    post:
+      operationId: reorderTestCases
+      tags: [tests]
+      summary: Set the order of all tests (owner or editor)
+      description: '`test_ids` must list every test of the draft exactly once.'
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_ids]
+              properties:
+                test_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: The tests in their new order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCaseList'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}:
+    put:
+      operationId: replaceTestCase
+      tags: [tests]
+      summary: Replace the files of a test (owner or editor)
+      description: |
+        `multipart/form-data` with `input` and/or `output` (files). Whatever is sent replaces
+        the current file; the position and `is_sample` stay.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: string
+                  format: binary
+                output:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCase'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateTestCase
+      tags: [tests]
+      summary: Mark a test as a sample or hidden (owner or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_sample]
+              properties:
+                is_sample:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCase'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteTestCase
+      tags: [tests]
+      summary: Remove a test (owner or editor)
+      description: The remaining tests keep their order and are renumbered.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/input:
+    get:
+      operationId: downloadTestInput
+      tags: [tests]
+      summary: The input file of a test (owner or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '200':
+          description: The file, as stored
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/output:
+    get:
+      operationId: downloadTestOutput
+      tags: [tests]
+      summary: The expected output file of a test (owner or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+      responses:
+        '200':
+          description: The file, as stored
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/solutions:
+    get:
+      operationId: listReferenceSolutions
+      tags: [solutions]
+      summary: Reference solutions of the draft (owner or editor)
+      description: Never sent to anyone else, in any endpoint.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: Solutions, primary first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceSolution'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createReferenceSolution
+      tags: [solutions]
+      summary: Attach a reference solution (owner or editor)
+      description: |
+        The first solution becomes the primary one. Marking another as primary demotes the
+        previous primary. At most `constraints.solutions.max_count` per version.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReferenceSolutionRequest'
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferenceSolution'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/solutions/{solutionId}:
+    patch:
+      operationId: updateReferenceSolution
+      tags: [solutions]
+      summary: Change a reference solution (owner or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/SolutionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReferenceSolutionRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferenceSolution'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteReferenceSolution
+      tags: [solutions]
+      summary: Remove a reference solution (owner or editor)
+      description: Removing the primary one leaves the version without a primary until another is chosen.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/SolutionId'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/submissions:
+    post:
+      operationId: createSubmission
+      tags: [submissions]
+      summary: Submit code
+      description: |
+        Only for a published problem in a Space the caller can submit to: any logged-in user in a
+        public Space, members only in a private one, never in an archived Space. The language must
+        be one the problem allows and the source at most `constraints.source_max_bytes` bytes.
+        Answers 202 with the submission in status `queued` straight away; follow it with the
+        events stream or by polling. If Judge is unavailable the submission is kept and handed
+        over later. Limited to 10 submissions per minute per user (429 `RATE_LIMITED`).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubmissionRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionSummary'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: listSubmissions
+      tags: [submissions]
+      summary: Submissions of a problem, newest first
+      description: |
+        `scope=mine` (default) lists the caller's own. `scope=all` lists everyone's and is for
+        owners and editors only (403 for others).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [mine, all]
+            default: mine
+      responses:
+        '200':
+          description: A page of submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/submissions/{submissionId}:
+    get:
+      operationId: getSubmission
+      tags: [submissions]
+      summary: One submission with its source and per-test results
+      description: |
+        Visible to its author, and to owners and editors of the Space (decision log, GRD-46).
+        Anyone else gets 404. Results never contain the content of a hidden test; previews
+        exist for sample tests only.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: The submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/submissions/{submissionId}/events:
+    get:
+      operationId: streamSubmission
+      tags: [submissions]
+      summary: Live status (Server-Sent Events)
+      description: |
+        `text/event-stream`. The first event, `submission`, is the current state; another follows
+        every change; the stream ends after the final one. Each event's data is a `Submission`
+        without `source`. A comment line is sent every 15 s to keep proxies open, and
+        `retry: 3000` tells the browser to reconnect after 3 s; every connection starts with the
+        current state, so a dropped connection loses nothing. Clients without `EventSource`
+        can poll `getSubmission` instead.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/submissions/{submissionId}/rejudge:
+    post:
+      operationId: rejudgeSubmission
+      tags: [submissions]
+      summary: Check a submission again after a system error
+      description: |
+        Only when the verdict is `ISE` (never the submitter's fault). The author or an owner
+        or editor of the Space can do it. Anything else is 409.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '202':
+          description: Queued again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
 components:
   responses:
     Error:
@@ -717,6 +1572,34 @@ components:
       schema:
         type: string
         maxLength: 80
+    ProblemSlug:
+      name: problemSlug
+      in: path
+      required: true
+      description: Problem slug (case-insensitive), unique inside its Space
+      schema:
+        type: string
+    TestId:
+      name: testId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SolutionId:
+      name: solutionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SubmissionId:
+      name: submissionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
     OAuthProvider:
       type: string
@@ -932,6 +1815,668 @@ components:
         status:
           type: string
           enum: [accepted, declined]
+    Language:
+      type: string
+      description: Same codes as the Judge contract.
+      enum: [c, cpp, python]
+    ProblemStatus:
+      type: string
+      description: |
+        `draft` was never published; `published` is open to solvers; `archived` was
+        published and no longer accepts submissions.
+      enum: [draft, published, archived]
+    SubmissionStatus:
+      type: string
+      enum: [queued, running, completed]
+    Verdict:
+      type: string
+      description: |
+        Overall verdict. AC accepted, WA wrong answer, TLE time limit exceeded, MLE memory limit
+        exceeded, RE runtime error, CE compilation error, OLE output limit exceeded, ISE internal
+        system error (never the submitter's fault; can be checked again).
+      enum: [AC, WA, TLE, MLE, RE, CE, OLE, ISE]
+    TestVerdict:
+      type: string
+      enum: [AC, WA, TLE, MLE, RE, OLE, ISE, SKIPPED]
+    Range:
+      type: object
+      required: [min, max, default]
+      properties:
+        min:
+          type: integer
+        max:
+          type: integer
+        default:
+          type: integer
+    TestLimits:
+      type: object
+      description: What the tests of one problem version may add up to.
+      required: [max_count, max_total_bytes, max_file_bytes, max_sample_bytes, max_samples]
+      properties:
+        max_count:
+          type: integer
+        max_total_bytes:
+          type: integer
+          description: Input plus output of every test, after normalising
+        max_file_bytes:
+          type: integer
+          description: Per input or output file, after normalising
+        max_sample_bytes:
+          type: integer
+          description: Per file of a sample test, because samples are shown in the statement
+        max_samples:
+          type: integer
+    ProblemConstraints:
+      type: object
+      description: The ranges the editor must respect, so the web app never hard-codes them.
+      required:
+        [
+          title_max_length,
+          statement_max_length,
+          time_limit_ms,
+          memory_limit_kb,
+          languages,
+          tests,
+          images,
+          solutions,
+          source_max_bytes,
+        ]
+      properties:
+        title_max_length:
+          type: integer
+        statement_max_length:
+          type: integer
+        time_limit_ms:
+          $ref: '#/components/schemas/Range'
+        memory_limit_kb:
+          $ref: '#/components/schemas/Range'
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+        tests:
+          $ref: '#/components/schemas/TestLimits'
+        images:
+          type: object
+          required: [max_bytes, content_types]
+          properties:
+            max_bytes:
+              type: integer
+            content_types:
+              type: array
+              items:
+                type: string
+        solutions:
+          type: object
+          required: [max_count]
+          properties:
+            max_count:
+              type: integer
+        source_max_bytes:
+          type: integer
+          description: Submissions and reference solutions
+    CreateProblemRequest:
+      type: object
+      required: [slug, title]
+      properties:
+        slug:
+          type: string
+          description: 2-64 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit; not `new`, `edit` and similar words
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        statement:
+          type: string
+          default: ''
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Language'
+    UpdateProblemRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        statement:
+          type: string
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Language'
+    SpaceRef:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+    ProblemSummary:
+      type: object
+      required:
+        [
+          id,
+          slug,
+          title,
+          status,
+          version_number,
+          time_limit_ms,
+          memory_limit_kb,
+          allowed_languages,
+          created_by,
+          created_at,
+          updated_at,
+          published_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProblemStatus'
+        version_number:
+          type: integer
+          description: The current version
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+        created_by:
+          $ref: '#/components/schemas/PublicUser'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+    ProblemPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemSummary'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    SampleTest:
+      type: object
+      required: [position, input, output]
+      properties:
+        position:
+          type: integer
+          description: 1-based, in judging order
+        input:
+          type: string
+        output:
+          type: string
+    Problem:
+      type: object
+      description: |
+        What a solver may know about a problem. Deliberately has no test count, hidden test,
+        reference solution or author-only field.
+      required:
+        [
+          id,
+          slug,
+          status,
+          space,
+          title,
+          statement,
+          version_number,
+          time_limit_ms,
+          memory_limit_kb,
+          allowed_languages,
+          samples,
+          accepts_submissions,
+          created_by,
+          published_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProblemStatus'
+        space:
+          $ref: '#/components/schemas/SpaceRef'
+        title:
+          type: string
+        statement:
+          type: string
+          description: Markdown with `$...$` and `$$...$$` maths
+        version_number:
+          type: integer
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/SampleTest'
+        accepts_submissions:
+          type: boolean
+          description: Published, and its Space is not archived
+        created_by:
+          $ref: '#/components/schemas/PublicUser'
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+    ProblemVersion:
+      type: object
+      required:
+        [
+          id,
+          number,
+          status,
+          title,
+          statement,
+          time_limit_ms,
+          memory_limit_kb,
+          allowed_languages,
+          created_at,
+          updated_at,
+          published_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [draft, published]
+        title:
+          type: string
+        statement:
+          type: string
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+    PublishCheck:
+      type: object
+      required: [key, ok, message]
+      properties:
+        key:
+          type: string
+          enum: [statement, languages, sample_test, tests, solution]
+        ok:
+          type: boolean
+        message:
+          type: string
+          description: What is needed (when not ok) or what is in place (when ok)
+    ProblemEditor:
+      type: object
+      required:
+        [
+          id,
+          slug,
+          status,
+          space,
+          version,
+          editable,
+          created_by,
+          created_at,
+          updated_at,
+          tests,
+          solutions,
+          publish_checks,
+          can_publish,
+          constraints,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProblemStatus'
+        space:
+          $ref: '#/components/schemas/SpaceRef'
+        version:
+          $ref: '#/components/schemas/ProblemVersion'
+        editable:
+          type: boolean
+          description: The version is a draft, the problem is not archived and the Space is not archived
+        created_by:
+          $ref: '#/components/schemas/PublicUser'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        tests:
+          $ref: '#/components/schemas/TestSummary'
+        solutions:
+          type: object
+          required: [count, has_primary]
+          properties:
+            count:
+              type: integer
+            has_primary:
+              type: boolean
+        publish_checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublishCheck'
+        can_publish:
+          type: boolean
+          description: Every check is ok and the version is an editable draft
+        constraints:
+          $ref: '#/components/schemas/ProblemConstraints'
+    ImageUpload:
+      type: object
+      required: [url, markdown, content_type, size_bytes]
+      properties:
+        url:
+          type: string
+          description: Absolute path or URL to put in the statement
+        markdown:
+          type: string
+          description: '`![](url)`, ready to insert'
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+    TestSummary:
+      type: object
+      required: [count, sample_count, total_bytes]
+      properties:
+        count:
+          type: integer
+        sample_count:
+          type: integer
+        total_bytes:
+          type: integer
+    TestCase:
+      type: object
+      description: |
+        Input and expected output are stored as UTF-8 text, normalised on upload: a leading byte order mark is
+        removed, CRLF and lone CR become LF, trailing blank lines are removed and a non-empty file ends with
+        exactly one LF. Binary files (NUL or other control characters, invalid UTF-8) are refused.
+        The SHA-256 and sizes are of the normalised content.
+      required:
+        [
+          id,
+          position,
+          is_sample,
+          input_sha256,
+          output_sha256,
+          input_size_bytes,
+          output_size_bytes,
+          created_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          description: 1-based; Judge runs the tests in this order
+        is_sample:
+          type: boolean
+        input_sha256:
+          type: string
+        output_sha256:
+          type: string
+        input_size_bytes:
+          type: integer
+        output_size_bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    TestCaseList:
+      type: object
+      required: [items, summary, limits, editable]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestCase'
+        summary:
+          $ref: '#/components/schemas/TestSummary'
+        limits:
+          $ref: '#/components/schemas/TestLimits'
+        editable:
+          type: boolean
+    ReferenceSolution:
+      type: object
+      required: [id, language, source, source_bytes, is_primary, created_by, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        language:
+          $ref: '#/components/schemas/Language'
+        source:
+          type: string
+        source_bytes:
+          type: integer
+        is_primary:
+          type: boolean
+        created_by:
+          $ref: '#/components/schemas/PublicUser'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateReferenceSolutionRequest:
+      type: object
+      required: [language, source]
+      properties:
+        language:
+          $ref: '#/components/schemas/Language'
+        source:
+          type: string
+          minLength: 1
+        is_primary:
+          type: boolean
+          description: Defaults to true for the first solution, false after that
+    UpdateReferenceSolutionRequest:
+      type: object
+      minProperties: 1
+      properties:
+        language:
+          $ref: '#/components/schemas/Language'
+        source:
+          type: string
+          minLength: 1
+        is_primary:
+          type: boolean
+    CreateSubmissionRequest:
+      type: object
+      required: [language, source]
+      properties:
+        language:
+          $ref: '#/components/schemas/Language'
+        source:
+          type: string
+          minLength: 1
+          description: UTF-8, at most 65536 bytes
+    SubmissionSummary:
+      type: object
+      required:
+        [
+          id,
+          problem,
+          space,
+          author,
+          language,
+          status,
+          verdict,
+          time_ms,
+          memory_kb,
+          tests_passed,
+          tests_total,
+          created_at,
+          judged_at,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        problem:
+          type: object
+          required: [slug, title]
+          properties:
+            slug:
+              type: string
+            title:
+              type: string
+        space:
+          $ref: '#/components/schemas/SpaceRef'
+        author:
+          $ref: '#/components/schemas/PublicUser'
+        language:
+          $ref: '#/components/schemas/Language'
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+          description: Set once `status` is `completed`
+        time_ms:
+          type: integer
+          nullable: true
+          description: Slowest test that ran
+        memory_kb:
+          type: integer
+          nullable: true
+          description: Largest peak memory of a test that ran
+        tests_passed:
+          type: integer
+          nullable: true
+        tests_total:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        judged_at:
+          type: string
+          format: date-time
+          nullable: true
+    SubmissionPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionSummary'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    SubmissionTestResult:
+      type: object
+      description: |
+        One test, in judging order. Hidden tests carry the verdict, time and memory and nothing
+        else; the previews exist for sample tests only.
+      required: [position, is_sample, verdict, time_ms, memory_kb]
+      properties:
+        position:
+          type: integer
+        is_sample:
+          type: boolean
+        verdict:
+          $ref: '#/components/schemas/TestVerdict'
+        time_ms:
+          type: integer
+        memory_kb:
+          type: integer
+        stdout_preview:
+          type: string
+          maxLength: 1024
+        checker_message:
+          type: string
+          maxLength: 256
+    Submission:
+      allOf:
+        - $ref: '#/components/schemas/SubmissionSummary'
+        - type: object
+          required: [compile_message, error_code, results, can_rejudge]
+          properties:
+            source:
+              type: string
+              description: Missing in the events stream
+            compile_message:
+              type: string
+              nullable: true
+              description: Compiler output (at most 8192 characters) when the verdict is CE
+            error_code:
+              type: string
+              nullable: true
+              description: Why the verdict is ISE, e.g. `SANDBOX_FAILURE` or `JUDGE_UNAVAILABLE`
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/SubmissionTestResult'
+            can_rejudge:
+              type: boolean
+              description: The verdict is ISE and the caller may ask for another check
     HealthResponse:
       type: object
       required: [status, version]

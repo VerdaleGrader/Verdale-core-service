@@ -1,10 +1,11 @@
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import fastify, { FastifyError, FastifyInstance } from 'fastify';
+import fastify, { FastifyError, FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { AuthConfigurations } from '@/config';
+import type { AuthConfigurations, JudgeConfigurations } from '@/config';
 import {
   ForbiddenError,
   InternalServerError,
@@ -13,6 +14,14 @@ import {
   ValidationError,
 } from '@/errors';
 import TLogger, { Layer } from '@/logging/logger';
+import { JudgeClient } from '@/libs/judge';
+import { Storages } from '@/libs/storage';
+import AssetController from '@/controllers/problem/asset.controller';
+import ProblemController from '@/controllers/problem/problem.controller';
+import SolutionController from '@/controllers/problem/solution.controller';
+import TestCaseController from '@/controllers/problem/test-case.controller';
+import JudgeResultController from '@/controllers/judge/judge-result.controller';
+import SubmissionController from '@/controllers/submission/submission.controller';
 import AuthController from '@/controllers/auth/auth.controller';
 import SystemController from '@/controllers/system/system.controller';
 import InviteController from '@/controllers/space/invite.controller';
@@ -21,10 +30,22 @@ import UserController from '@/controllers/user/user.controller';
 import { OAuthProviders } from '@/libs/oauth';
 import { SESSION_COOKIE } from '@/middleware/session';
 import InviteRepository from '@/repositories/invite.repository';
+import ProblemRepository from '@/repositories/problem.repository';
 import SessionRepository from '@/repositories/session.repository';
+import SolutionRepository from '@/repositories/solution.repository';
 import SpaceRepository from '@/repositories/space.repository';
+import SubmissionRepository from '@/repositories/submission.repository';
+import TestCaseRepository from '@/repositories/test-case.repository';
 import UserRepository from '@/repositories/user.repository';
 import AuthService from '@/services/auth/auth.service';
+import ImageService from '@/services/problem/image.service';
+import ProblemService from '@/services/problem/problem.service';
+import SolutionService from '@/services/problem/solution.service';
+import TestCaseService from '@/services/problem/test-case.service';
+import JudgeResultService from '@/services/judge/judge-result.service';
+import JudgeDispatcher from '@/services/submission/dispatcher';
+import SubmissionService from '@/services/submission/submission.service';
+import { SUBMISSIONS_PER_MINUTE, TEST_LIMITS } from '@/constants/limits';
 import InviteService from '@/services/space/invite.service';
 import MemberService from '@/services/space/member.service';
 import SpaceService from '@/services/space/space.service';
@@ -38,7 +59,24 @@ export interface ApiDependencies {
   prisma: PrismaClient;
   auth: AuthConfigurations;
   oauthProviders: OAuthProviders;
+  /** Private bucket for tests, public bucket for statement pictures. */
+  storage: Storages;
+  judge: {
+    client: JudgeClient;
+    config: Pick<JudgeConfigurations, 'callbackKeys' | 'callbackUrl'>;
+  };
+  /** Base URL of statement pictures, e.g. "/api/v1/assets" or the public bucket's domain. */
+  publicAssetBaseUrl: string;
+  /** Test knobs; production leaves them out. */
+  tuning?: { streamIntervalMs?: number; dispatchGiveUpMs?: number };
   now?: () => Date;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Hands queued submissions to Judge; index.ts starts and stops its background loop. */
+    dispatcher?: JudgeDispatcher;
+  }
 }
 
 export interface AppDependencies {
@@ -131,7 +169,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * Accounts, Spaces, members and invitations under /api/v1. The Frontend
  * proxies /api/* here, so browsers only ever see the web app's origin.
  */
-function registerApi(app: FastifyInstance, { prisma, auth, oauthProviders, now }: ApiDependencies) {
+function registerApi(
+  app: FastifyInstance,
+  { prisma, auth, oauthProviders, storage, judge, publicAssetBaseUrl, tuning, now }: ApiDependencies
+) {
   const userRepository = new UserRepository();
   const sessionRepository = new SessionRepository();
   const spaceRepository = new SpaceRepository();
@@ -158,15 +199,98 @@ function registerApi(app: FastifyInstance, { prisma, auth, oauthProviders, now }
     now
   );
 
+  const problemRepository = new ProblemRepository();
+  const testCaseRepository = new TestCaseRepository();
+  const solutionRepository = new SolutionRepository();
+  const submissionRepository = new SubmissionRepository();
+
+  const problemService = new ProblemService(
+    prisma,
+    problemRepository,
+    testCaseRepository,
+    solutionRepository,
+    spaceService,
+    storage.tests,
+    now
+  );
+  const testCaseService = new TestCaseService(
+    prisma,
+    problemRepository,
+    testCaseRepository,
+    problemService,
+    storage.tests
+  );
+  const solutionService = new SolutionService(
+    prisma,
+    problemRepository,
+    solutionRepository,
+    problemService
+  );
+  const imageService = new ImageService(prisma, problemService, storage.assets, publicAssetBaseUrl);
+  const dispatcher = new JudgeDispatcher(
+    prisma,
+    submissionRepository,
+    testCaseRepository,
+    problemRepository,
+    judge.client,
+    { callbackUrl: judge.config.callbackUrl, now, giveUpMs: tuning?.dispatchGiveUpMs }
+  );
+  app.decorate('dispatcher', dispatcher);
+  const submissionService = new SubmissionService(
+    prisma,
+    submissionRepository,
+    testCaseRepository,
+    problemRepository,
+    spaceRepository,
+    problemService,
+    dispatcher,
+    now
+  );
+  const judgeResultService = new JudgeResultService(
+    prisma,
+    submissionRepository,
+    testCaseRepository,
+    judge.config.callbackKeys,
+    now
+  );
+
   const authController = new AuthController(authService, auth, oauthProviders);
+  const problemController = new ProblemController(problemService, imageService);
+  const testCaseController = new TestCaseController(testCaseService, problemService);
+  const solutionController = new SolutionController(solutionService);
+  const assetController = new AssetController(imageService);
+  const submissionController = new SubmissionController(
+    submissionService,
+    tuning?.streamIntervalMs
+  );
+  const judgeResultController = new JudgeResultController(judgeResultService);
   const userController = new UserController(userService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
   const inviteController = new InviteController(inviteService);
+
+  // Judge's result callback. Not part of the browser API: no cookies, no CSRF
+  // check, no session. The body stays raw bytes because the HMAC signature
+  // covers them exactly as sent (contracts/HMAC.md).
+  app.register(async (internal) => {
+    internal.addContentTypeParser(
+      'application/json',
+      { parseAs: 'buffer', bodyLimit: 8 * 1024 * 1024 },
+      (_request, body, done) => done(null, body)
+    );
+    internal.post(
+      '/internal/judge/result',
+      judgeResultController.result.bind(judgeResultController)
+    );
+  });
 
   // One plugin scope so cookie parsing is loaded before the session hook runs,
   // and the rate limits apply to the API only (not /health or /ready).
   app.register(async (scope) => {
     await scope.register(cookie, { secret: auth.sessionSecret });
+    // Test uploads are two files of at most max_file_bytes each, plus a few fields.
+    await scope.register(multipart, {
+      limits: { fileSize: TEST_LIMITS.max_file_bytes, files: 4, fields: 8, parts: 12 },
+    });
     // Generous global limit; the sign-in endpoints get a tight one below.
     await scope.register(rateLimit, {
       global: true,
@@ -245,6 +369,78 @@ function registerApi(app: FastifyInstance, { prisma, auth, oauthProviders, now }
         v1.delete(
           '/spaces/:slug/invites/:inviteId',
           spaceController.revokeInvite.bind(spaceController)
+        );
+
+        // --- problems (M3) ---------------------------------------------------
+        const problems = '/spaces/:slug/problems';
+        const problem = `${problems}/:problemSlug`;
+        v1.get(problems, problemController.list.bind(problemController));
+        v1.post(problems, problemController.create.bind(problemController));
+        v1.get(problem, problemController.get.bind(problemController));
+        v1.patch(problem, problemController.update.bind(problemController));
+        v1.delete(problem, problemController.remove.bind(problemController));
+        v1.get(`${problem}/editor`, problemController.editor.bind(problemController));
+        v1.post(`${problem}/publish`, problemController.publish.bind(problemController));
+        v1.post(`${problem}/archive`, problemController.archive.bind(problemController));
+        v1.post(`${problem}/images`, problemController.uploadImage.bind(problemController));
+        v1.get('/assets/:name', assetController.get.bind(assetController));
+
+        v1.get(`${problem}/tests`, testCaseController.list.bind(testCaseController));
+        v1.post(`${problem}/tests`, testCaseController.create.bind(testCaseController));
+        v1.post(`${problem}/tests/reorder`, testCaseController.reorder.bind(testCaseController));
+        v1.put(`${problem}/tests/:testId`, testCaseController.replace.bind(testCaseController));
+        v1.patch(`${problem}/tests/:testId`, testCaseController.update.bind(testCaseController));
+        v1.delete(`${problem}/tests/:testId`, testCaseController.remove.bind(testCaseController));
+        v1.get(`${problem}/tests/:testId/input`, (request, reply) =>
+          testCaseController.download(request, reply, 'input')
+        );
+        v1.get(`${problem}/tests/:testId/output`, (request, reply) =>
+          testCaseController.download(request, reply, 'output')
+        );
+
+        v1.get(`${problem}/solutions`, solutionController.list.bind(solutionController));
+        v1.post(`${problem}/solutions`, solutionController.create.bind(solutionController));
+        v1.patch(
+          `${problem}/solutions/:solutionId`,
+          solutionController.update.bind(solutionController)
+        );
+        v1.delete(
+          `${problem}/solutions/:solutionId`,
+          solutionController.remove.bind(solutionController)
+        );
+
+        // --- submissions (M3) -------------------------------------------------
+        // Submitting and re-checking share one per-user budget (GRD-44; GRD-55 tunes it).
+        const checkSubmitLimit = scope.createRateLimit({
+          max: SUBMISSIONS_PER_MINUTE,
+          timeWindow: '1 minute',
+          keyGenerator: (request) => `submit:${request.currentUser?.id ?? request.ip}`,
+        });
+        const submitLimit = async (request: FastifyRequest) => {
+          const limit = await checkSubmitLimit(request);
+          if (!limit.isAllowed && limit.isExceeded) {
+            throw new VError({
+              message: `Too many submissions. Try again in ${Math.ceil(limit.ttlInSeconds)} seconds.`,
+              status: 429,
+              error_code: 'RATE_LIMITED',
+            });
+          }
+        };
+        v1.post(
+          `${problem}/submissions`,
+          { preHandler: submitLimit },
+          submissionController.create.bind(submissionController)
+        );
+        v1.get(`${problem}/submissions`, submissionController.list.bind(submissionController));
+        v1.get('/submissions/:submissionId', submissionController.get.bind(submissionController));
+        v1.get(
+          '/submissions/:submissionId/events',
+          submissionController.events.bind(submissionController)
+        );
+        v1.post(
+          '/submissions/:submissionId/rejudge',
+          { preHandler: submitLimit },
+          submissionController.rejudge.bind(submissionController)
         );
 
         v1.get('/invites/:token', inviteController.preview.bind(inviteController));

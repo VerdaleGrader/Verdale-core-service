@@ -1,7 +1,9 @@
 import 'dotenv/config';
 import { ConfigError, loadConfig } from '@/config';
 import { configureLogger, flushLogs, logger as rootLogger } from '@/libs/winston';
+import { HttpJudgeClient } from '@/libs/judge';
 import { createOAuthProviders } from '@/libs/oauth';
+import { createStorages } from '@/libs/storage';
 import { createDatabase } from '@/libs/prisma';
 import TLogger, { Layer } from '@/logging/logger';
 import { buildApp } from '@/routes';
@@ -29,8 +31,18 @@ async function main() {
       prisma: database.prisma,
       auth: config.auth,
       oauthProviders: createOAuthProviders(config.auth.providers),
+      storage: createStorages(config.storage),
+      judge: { client: new HttpJudgeClient(config.judge), config: config.judge },
+      publicAssetBaseUrl: config.storage.publicAssetBaseUrl,
     },
   });
+  if (!config.judge.signing) {
+    logger.warn({
+      message: 'JUDGE_KEY_ID / JUDGE_SECRET are not set: submissions are kept but not judged',
+    });
+  }
+  // Retries hand-overs to Judge that failed while it was down.
+  app.dispatcher?.start();
   if (Object.keys(config.auth.providers).length === 0) {
     logger.warn({ message: 'No OAuth provider is configured: nobody can log in' });
   }
@@ -47,6 +59,7 @@ async function main() {
     timer.unref();
     try {
       await app.close(); // stop accepting requests, finish in-flight ones
+      await app.dispatcher?.stop(); // finish hand-overs to Judge that are under way
       await database.close();
       logger.info({ message: 'Shutdown complete' });
     } catch (error) {
