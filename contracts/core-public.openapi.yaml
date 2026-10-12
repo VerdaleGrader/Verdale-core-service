@@ -1382,8 +1382,8 @@ paths:
       summary: Publish the draft (owner or editor)
       description: |
         Makes the draft the published, immutable version. Needs a statement, at least
-        one sample test, one test in total, one allowed language and a primary reference
-        solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
+        one sample test, one test in total with an expected output for every test, one allowed
+        language and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
         Provisional: Milestone 4 puts the verification run (reference solution against
         every test on Judge) in front of this step.
       security:
@@ -1510,7 +1510,13 @@ paths:
     get:
       operationId: listTestCases
       tags: [tests]
-      summary: Tests of the draft, with totals and limits (owner or editor)
+      summary: Tests of the draft, with totals and limits (owner, administrator, editor, observer)
+      description: |
+        A testcase can wait for its expected output: `output_sha256` and `output_size_bytes` are
+        then null and `summary.missing_output_count` counts it (publishing is blocked until none
+        is left, see `PublishCheck`). `revision` identifies the current order, files and
+        visibility; send it back to `saveTestCases` so two people editing at once cannot
+        overwrite each other.
       security:
         - session: []
       parameters:
@@ -1576,6 +1582,103 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '409':
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: saveTestCases
+      tags: [tests]
+      summary: Save every change of the testcases page at once (owner or editor)
+      description: |
+        `tests` is the list the problem should have afterwards, in order; a testcase that is
+        not listed is removed. An entry with `id` keeps that testcase; without `id` it is new
+        and needs an `input`. `input` and `output` refer to files by hash, uploaded earlier with
+        `stageTestFile` or created by Generate; a left-out file stays as it is (a new testcase
+        without `output` has none yet). Either everything is saved or nothing.
+        `revision` is the one `listTestCases` returned; when the testcases have changed since,
+        409 `TESTS_CHANGED` and nothing is saved. Without it the check is skipped.
+        Other 409 codes: `SAMPLE_LIMIT_REACHED`, `SAMPLE_TOO_LARGE`, `TEST_LIMIT_REACHED`,
+        `TEST_SIZE_LIMIT_REACHED`, `VERSION_PUBLISHED`, `PROBLEM_ARCHIVED`. An id that is not a
+        testcase of this problem, a duplicate id or a file that was never uploaded is 400 with
+        one `details` entry per problem (field `tests[0].input` and the like).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveTestCasesRequest'
+      responses:
+        '200':
+          description: The saved testcases, with the new revision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestCaseList'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/files:
+    post:
+      operationId: stageTestFile
+      tags: [tests]
+      summary: Check and store one file for a later save (owner or editor)
+      description: |
+        Either `multipart/form-data` with the part `file`, or JSON `{ "text": "..." }` for pasted
+        text. The file is checked and normalised as described in `TestCase` and stored by its
+        SHA-256; the problem does not change until `saveTestCases` refers to the hash. Identical
+        content is stored once and a file nobody uses is simply left unreferenced. A file that is
+        binary, has a NUL, or is over 8 MiB is 400 with `details` field `file` naming the file.
+        Pasted text over 1 MiB is 413. Only while the draft is open (409 otherwise). Limited to
+        300 requests per minute.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageTextRequest'
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedFile'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '429':
           $ref: '#/components/responses/Error'
   /api/v1/spaces/{slug}/problems/{problemSlug}/tests/reorder:
     post:
@@ -1725,13 +1828,21 @@ paths:
     get:
       operationId: downloadTestInput
       tags: [tests]
-      summary: The input file of a test (owner or editor)
+      summary: The input file of a test (owner, administrator, editor, observer)
+      description: |
+        Sent as an attachment; `inline=true` opens it as text instead.
       security:
         - session: []
       parameters:
         - $ref: '#/components/parameters/Slug'
         - $ref: '#/components/parameters/ProblemSlug'
         - $ref: '#/components/parameters/TestId'
+        - name: inline
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+            default: 'false'
       responses:
         '200':
           description: The file, as stored
@@ -1749,13 +1860,21 @@ paths:
     get:
       operationId: downloadTestOutput
       tags: [tests]
-      summary: The expected output file of a test (owner or editor)
+      summary: The expected output file of a test (owner, administrator, editor, observer)
+      description: |
+        Sent as an attachment; `inline=true` opens it as text instead. 404 while the testcase has no expected output yet.
       security:
         - session: []
       parameters:
         - $ref: '#/components/parameters/Slug'
         - $ref: '#/components/parameters/ProblemSlug'
         - $ref: '#/components/parameters/TestId'
+        - name: inline
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+            default: 'false'
       responses:
         '200':
           description: The file, as stored
@@ -1763,6 +1882,141 @@ paths:
             text/plain:
               schema:
                 type: string
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/files/{side}:
+    get:
+      operationId: getTestFileSlice
+      tags: [tests]
+      summary: A window of lines of a test's input or expected output (owner, administrator, editor, observer)
+      description: |
+        For the preview (the first 10 lines) and "View all" (up to 1000 lines a window) of the
+        testcases page. 404 for `output` while the testcase has no expected output yet.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/TestId'
+        - name: side
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [input, output]
+        - $ref: '#/components/parameters/FromLine'
+        - $ref: '#/components/parameters/MaxLines'
+      responses:
+        '200':
+          description: The window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestFileSlice'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/generate:
+    post:
+      operationId: startGenerate
+      tags: [tests]
+      summary: Create expected outputs by running a reference solution (owner or editor)
+      description: |
+        Runs the saved solution on the inputs of the chosen testcases (all of them when
+        `test_ids` is left out), one Judge job per testcase, at most three at a time. Nothing in
+        the problem changes: each finished run offers its `output` as a hash that goes into
+        `saveTestCases` when the author accepts it. Answers 202 with the job; follow it with
+        `getGenerate`. One job at a time per problem (409 `GENERATE_RUNNING`); the job gives up
+        after 10 minutes. A solution or testcase that is not of this problem is 404 / 400.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartGenerateRequest'
+      responses:
+        '202':
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateJob'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}:
+    get:
+      operationId: getGenerate
+      tags: [tests]
+      summary: Progress and results of a Generate job (owner, administrator, editor, observer)
+      description: |
+        Poll it while `status` is `running`. Finished jobs are kept for 24 hours, so closing the
+        page does not lose the results.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: The job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateJob'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}/stop:
+    post:
+      operationId: stopGenerate
+      tags: [tests]
+      summary: Stop a Generate job (owner or editor)
+      description: Keeps the runs that already finished. Stopping a job that is no longer running changes nothing.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: The job as it is now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateJob'
+        '400':
+          $ref: '#/components/responses/Error'
         '401':
           $ref: '#/components/responses/Error'
         '403':
@@ -1902,6 +2156,10 @@ paths:
         Answers 202 with the submission in status `queued` straight away; follow it with the
         events stream or by polling. If Judge is unavailable the submission is kept and handed
         over later. Limited to 10 submissions per minute per user (429 `RATE_LIMITED`).
+        `track` names the Track the solver is working in; it must reach the problem for this
+        person (400 with `details` field `track` otherwise). Left out, the first Track that
+        reaches the problem is used, and none when no Track does. Staff reach every active Track.
+        The Track is shown to staff in the Space-wide submission lists.
       security:
         - session: []
       parameters:
@@ -1967,13 +2225,409 @@ paths:
           $ref: '#/components/responses/Error'
         '404':
           $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions:
+    get:
+      operationId: listSpaceSubmissions
+      tags: [submissions]
+      summary: Every submission of a Space, filterable (owner, administrator, editor, observer)
+      description: |
+        The Space-wide list for staff (GRD-93). Solvers, visitors and non-members get 403 / 404
+        as for any private part of the Space. `member` and `problem` are exact (case-insensitive)
+        username and problem slug; `q` searches the username, display name, problem slug and title.
+        `track` is a Track slug, or `none` for submissions made from no Track. `verdict` takes
+        several codes separated by commas (`AC,WA`). `from` and `to` bound the submission time.
+        An unknown Track is 404.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: member
+          in: query
+          description: Username of the author
+          schema:
+            type: string
+            maxLength: 80
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 80
+        - name: problem
+          in: query
+          description: Problem slug
+          schema:
+            type: string
+            maxLength: 80
+        - name: track
+          in: query
+          description: Track slug, or `none`
+          schema:
+            type: string
+            maxLength: 80
+        - name: verdict
+          in: query
+          description: Comma-separated verdict codes, e.g. `AC,WA`
+          schema:
+            type: string
+            example: AC,WA
+        - name: language
+          in: query
+          schema:
+            $ref: '#/components/schemas/Language'
+        - name: version
+          in: query
+          description: Problem version number
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest, member, tests_passed, time]
+            default: newest
+      responses:
+        '200':
+          description: A page of submissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceSubmissionPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/versions:
+    get:
+      operationId: listSubmissionVersions
+      tags: [submissions]
+      summary: Problem versions that exist in the Space (owner, administrator, editor, observer)
+      description: Feeds the version filter of the lists. `problem` limits it to one problem slug.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - name: problem
+          in: query
+          description: Problem slug
+          schema:
+            type: string
+            maxLength: 80
+      responses:
+        '200':
+          description: Version numbers, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: integer
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/by-member:
+    get:
+      operationId: listSubmissionsByMember
+      tags: [submissions]
+      summary: Submissions rolled up per person (owner, administrator, editor, observer)
+      description: |
+        One row per member, plus anyone who submitted to a public Space without joining it
+        (`role` is then null). `hide_empty` (default true) drops people with no submission in
+        the window. `role=none` keeps people without a role. `track` is a Track slug or `none`.
+        `window` limits the counted submissions to the last 7 or 30 days.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: q
+          in: query
+          description: Search in the username and display name
+          schema:
+            type: string
+            maxLength: 80
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [owner, administrator, editor, observer, solver, none]
+        - name: track
+          in: query
+          schema:
+            type: string
+            maxLength: 80
+        - $ref: '#/components/parameters/SubmissionWindow'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [last_submission, solved, name]
+            default: last_submission
+        - name: hide_empty
+          in: query
+          schema:
+            type: string
+            enum: ['true', 'false']
+            default: 'true'
+      responses:
+        '200':
+          description: A page of member rollups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberRollupPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/by-member/{username}/problems:
+    get:
+      operationId: listMemberProblems
+      tags: [submissions]
+      summary: The problems one person tried (owner, administrator, editor, observer)
+      description: |
+        Second page of "by member". 404 for a user who is neither a member nor has submitted
+        in this Space. The response carries the person's rollup as `member`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Username'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: q
+          in: query
+          description: Search in the problem slug and title
+          schema:
+            type: string
+            maxLength: 80
+        - name: track
+          in: query
+          description: Track slug, or `none`
+          schema:
+            type: string
+            maxLength: 80
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, solved, unsolved]
+            default: all
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [last_submission, attempts, name]
+            default: last_submission
+      responses:
+        '200':
+          description: A page of problems with the person's results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProblemPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/by-track:
+    get:
+      operationId: listSubmissionsByTrack
+      tags: [submissions]
+      summary: Submissions rolled up per Track (owner, administrator, editor, observer)
+      description: |
+        One row per active Track, not paged. `members` is the Track's audience (its members when
+        the Track is members-only, otherwise every member of the Space); `members_finished` counts
+        those who solved every published problem of the Track.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - name: q
+          in: query
+          description: Search in the Track name and slug
+          schema:
+            type: string
+            maxLength: 80
+        - name: privacy
+          in: query
+          schema:
+            $ref: '#/components/schemas/TrackPrivacy'
+        - $ref: '#/components/parameters/SubmissionWindow'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [track_order, last_submission, submissions]
+            default: track_order
+      responses:
+        '200':
+          description: Tracks with their numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackRollup'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/by-track/{trackSlug}/problems:
+    get:
+      operationId: listTrackSubmissionProblems
+      tags: [submissions]
+      summary: The problems of a Track with how people got on (owner, administrator, editor, observer)
+      description: |
+        Not paged. Drafts and archived problems of the Track are included (`status` filters
+        them), which solvers never see. `most_common_failure` is the most frequent failing
+        verdict and test of the problem within this Track. 404 for an unknown Track.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+        - name: q
+          in: query
+          description: Search in the problem slug and title
+          schema:
+            type: string
+            maxLength: 80
+        - name: collection
+          in: query
+          description: Collection slug
+          schema:
+            type: string
+            maxLength: 80
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, published, draft, archived]
+            default: all
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [track_order, solved_fewest, last_submission]
+            default: track_order
+      responses:
+        '200':
+          description: The Track and its problems
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackSubmissionProblems'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/submissions/by-problem:
+    get:
+      operationId: listSubmissionsByProblem
+      tags: [submissions]
+      summary: Submissions rolled up per problem (owner, administrator, editor, observer)
+      description: |
+        `track` is a Track slug, or `none` for problems that sit in no active Track.
+        `status` filters the problem status.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: q
+          in: query
+          description: Search in the problem slug and title
+          schema:
+            type: string
+            maxLength: 80
+        - name: track
+          in: query
+          schema:
+            type: string
+            maxLength: 80
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, published, draft, archived]
+            default: all
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [last_submission, submissions, solved_fewest, name]
+            default: last_submission
+      responses:
+        '200':
+          description: A page of problem rollups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemRollupPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /api/v1/submissions/{submissionId}:
     get:
       operationId: getSubmission
       tags: [submissions]
       summary: One submission with its source and per-test results
       description: |
-        Visible to its author, and to owners and editors of the Space (decision log, GRD-46).
+        Visible to its author, and to owners, administrators, editors and observers of the Space (decision log, GRD-46).
         Anyone else gets 404. Results never contain the content of a hidden test; previews
         exist for sample tests only.
       security:
@@ -1990,6 +2644,52 @@ paths:
         '401':
           $ref: '#/components/responses/Error'
         '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/submissions/{submissionId}/tests/{position}:
+    get:
+      operationId: getSubmissionTest
+      tags: [submissions]
+      summary: One test of a submission, hidden tests included (owner, administrator, editor, observer)
+      description: |
+        The input, the expected output, what the program printed and its standard error, as
+        windows of lines. Only people who may read hidden tests reach it; anyone else, the author
+        included, gets 404 (the author reads samples in `getSubmission`). Core asks Judge to keep
+        the start of each test's output (64 KiB of stdout and 8 KiB of stderr), so `output` and
+        `stderr` can be `cut`. Use `part` to fetch one of the four, the others are then null.
+        `input` or `expected` that cannot be read are `unavailable`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+        - name: position
+          in: path
+          required: true
+          description: 1-based position of the test in the judging order
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100000
+        - name: part
+          in: query
+          schema:
+            type: string
+            enum: [input, expected, output, stderr]
+        - $ref: '#/components/parameters/FromLine'
+        - $ref: '#/components/parameters/MaxLines'
+      responses:
+        '200':
+          description: The test with its windows of text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionTestDetail'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '503':
           $ref: '#/components/responses/Error'
   /api/v1/submissions/{submissionId}/events:
     get:
@@ -2165,6 +2865,39 @@ components:
       schema:
         type: string
         format: uuid
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FromLine:
+      name: from_line
+      in: query
+      description: 1-based number of the first line of the window
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100000000
+        default: 1
+    MaxLines:
+      name: max_lines
+      in: query
+      description: Lines in the window
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 10
+    SubmissionWindow:
+      name: window
+      in: query
+      description: Count only submissions of the last 7 or 30 days
+      schema:
+        type: string
+        enum: [any, 7d, 30d]
+        default: any
   schemas:
     OAuthProvider:
       type: string
@@ -2757,12 +3490,14 @@ components:
       properties:
         key:
           type: string
-          enum: [statement, languages, sample_test, tests, solution]
+          enum: [statement, languages, sample_test, tests, outputs, solution]
         ok:
           type: boolean
         message:
           type: string
-          description: What is needed (when not ok) or what is in place (when ok)
+          description: |
+            What is needed (when not ok) or what is in place (when ok). `outputs` is not ok while a
+            testcase has no expected output: upload one or generate it from a solution
     ProblemEditor:
       type: object
       required:
@@ -2840,12 +3575,15 @@ components:
           type: integer
     TestSummary:
       type: object
-      required: [count, sample_count, total_bytes]
+      required: [count, sample_count, missing_output_count, total_bytes]
       properties:
         count:
           type: integer
         sample_count:
           type: integer
+        missing_output_count:
+          type: integer
+          description: Testcases still waiting for an expected output
         total_bytes:
           type: integer
     TestCase:
@@ -2854,7 +3592,8 @@ components:
         Input and expected output are stored as UTF-8 text, normalised on upload: a leading byte order mark is
         removed, CRLF and lone CR become LF, trailing blank lines are removed and a non-empty file ends with
         exactly one LF. Binary files (NUL or other control characters, invalid UTF-8) are refused.
-        The SHA-256 and sizes are of the normalised content.
+        The SHA-256 and sizes are of the normalised content. A testcase created on the testcases page
+        can have no expected output yet (`output_sha256` and `output_size_bytes` null).
       required:
         [
           id,
@@ -2879,16 +3618,19 @@ components:
           type: string
         output_sha256:
           type: string
+          nullable: true
+          description: Null while the expected output is still to be uploaded or generated
         input_size_bytes:
           type: integer
         output_size_bytes:
           type: integer
+          nullable: true
         created_at:
           type: string
           format: date-time
     TestCaseList:
       type: object
-      required: [items, summary, limits, editable]
+      required: [items, summary, limits, editable, revision]
       properties:
         items:
           type: array
@@ -2900,6 +3642,11 @@ components:
           $ref: '#/components/schemas/TestLimits'
         editable:
           type: boolean
+        revision:
+          type: string
+          description: |
+            Changes whenever the order, files or visibility of the testcases do. Send it with
+            `saveTestCases`; if the testcases changed meanwhile the save is 409 `TESTS_CHANGED`
     ReferenceSolution:
       type: object
       required: [id, language, source, source_bytes, is_primary, created_by, created_at, updated_at]
@@ -2956,6 +3703,11 @@ components:
           type: string
           minLength: 1
           description: UTF-8, at most 65536 bytes
+        track:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Slug of the Track the solver is working in; the first Track that reaches the problem when left out
     SubmissionSummary:
       type: object
       required:
@@ -3081,6 +3833,627 @@ components:
             can_rejudge:
               type: boolean
               description: The verdict is ISE and the caller may ask for another check
+    TrackRef:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+    SpaceSubmissionRow:
+      type: object
+      required:
+        [
+          id,
+          created_at,
+          member,
+          problem,
+          track,
+          version,
+          language,
+          status,
+          verdict,
+          tests_passed,
+          tests_total,
+          time_ms,
+          memory_kb,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        member:
+          $ref: '#/components/schemas/PublicUser'
+        problem:
+          type: object
+          required: [slug, title]
+          properties:
+            slug:
+              type: string
+            title:
+              type: string
+              description: Title of the version that was judged
+        track:
+          allOf:
+            - $ref: '#/components/schemas/TrackRef'
+          nullable: true
+          description: The Track the submission was made from; null when none reached the problem
+        version:
+          type: integer
+          description: Number of the problem version that was judged
+        language:
+          $ref: '#/components/schemas/Language'
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+        tests_passed:
+          type: integer
+          nullable: true
+        tests_total:
+          type: integer
+          nullable: true
+        time_ms:
+          type: integer
+          nullable: true
+        memory_kb:
+          type: integer
+          nullable: true
+    SpaceSubmissionPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaceSubmissionRow'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    SubmissionProblemRef:
+      type: object
+      required: [slug, title, status]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProblemStatus'
+    MemberRollup:
+      type: object
+      required:
+        [user, role, attempted, solved, submissions, ac_rate, last_verdict, last_submission_at]
+      properties:
+        user:
+          $ref: '#/components/schemas/PublicUser'
+        role:
+          allOf:
+            - $ref: '#/components/schemas/Role'
+          nullable: true
+          description: Null for someone who submitted without being a member
+        attempted:
+          type: integer
+          description: Problems tried
+        solved:
+          type: integer
+        submissions:
+          type: integer
+        ac_rate:
+          type: number
+          nullable: true
+          description: Accepted submissions out of all of them, 0 to 1; null when there are none
+        last_verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+        last_submission_at:
+          type: string
+          format: date-time
+          nullable: true
+    MemberRollupPage:
+      type: object
+      required: [items, page, page_size, total, totals]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberRollup'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+        totals:
+          type: object
+          description: Over every row that matches the filters, not only this page
+          required: [members, submissions]
+          properties:
+            members:
+              type: integer
+            submissions:
+              type: integer
+    MemberProblem:
+      type: object
+      required: [problem, track, attempts, solved, best_verdict, last_verdict, last_submission_at]
+      properties:
+        problem:
+          $ref: '#/components/schemas/SubmissionProblemRef'
+        track:
+          allOf:
+            - $ref: '#/components/schemas/TrackRef'
+          nullable: true
+          description: The Track of the person's latest submission of the problem
+        attempts:
+          type: integer
+        solved:
+          type: boolean
+        best_verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+        last_verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+        last_submission_at:
+          type: string
+          format: date-time
+          nullable: true
+    MemberProblemPage:
+      type: object
+      required: [items, page, page_size, total, member]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberProblem'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+        member:
+          $ref: '#/components/schemas/MemberRollup'
+    TrackRollup:
+      type: object
+      required:
+        [track, problems, members, submissions, accepted, members_finished, last_submission_at]
+      properties:
+        track:
+          type: object
+          required: [name, slug, privacy, is_default]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+            privacy:
+              $ref: '#/components/schemas/TrackPrivacy'
+            is_default:
+              type: boolean
+        problems:
+          type: integer
+          description: Published problems in the Track
+        members:
+          type: integer
+          description: Size of the Track's audience
+        submissions:
+          type: integer
+        accepted:
+          type: integer
+        members_finished:
+          type: integer
+          description: People of the audience who solved every published problem of the Track
+        last_submission_at:
+          type: string
+          format: date-time
+          nullable: true
+    FailureMode:
+      type: object
+      required: [verdict, test_position, count]
+      properties:
+        verdict:
+          $ref: '#/components/schemas/Verdict'
+        test_position:
+          type: integer
+          nullable: true
+          description: The first test that failed (1-based); null for a compilation error
+        count:
+          type: integer
+    TrackProblemRollup:
+      type: object
+      required:
+        [problem, collections, tried, solved, submissions, most_common_failure, last_submission_at]
+      properties:
+        problem:
+          $ref: '#/components/schemas/SubmissionProblemRef'
+        collections:
+          type: array
+          description: The Collections of the Track that hold the problem
+          items:
+            $ref: '#/components/schemas/TrackRef'
+        tried:
+          type: integer
+          description: People who submitted
+        solved:
+          type: integer
+          description: People who solved it
+        submissions:
+          type: integer
+        most_common_failure:
+          allOf:
+            - $ref: '#/components/schemas/FailureMode'
+          nullable: true
+        last_submission_at:
+          type: string
+          format: date-time
+          nullable: true
+    TrackSubmissionProblems:
+      type: object
+      required: [track, collections, items]
+      properties:
+        track:
+          type: object
+          required:
+            [name, slug, privacy, collections, problems, members, submissions, accepted, finished]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+            privacy:
+              $ref: '#/components/schemas/TrackPrivacy'
+            collections:
+              type: integer
+            problems:
+              type: integer
+            members:
+              type: integer
+            submissions:
+              type: integer
+            accepted:
+              type: integer
+            finished:
+              type: integer
+              description: People of the audience who solved every published problem
+        collections:
+          type: array
+          description: Active Collections of the Track, for the collection filter
+          items:
+            $ref: '#/components/schemas/TrackRef'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackProblemRollup'
+    ProblemRollup:
+      type: object
+      required: [problem, tracks, tried, solved, submissions, last_verdict, last_submission_at]
+      properties:
+        problem:
+          $ref: '#/components/schemas/SubmissionProblemRef'
+        tracks:
+          type: array
+          description: Active Tracks that reach the problem, in Track order
+          items:
+            $ref: '#/components/schemas/TrackRef'
+        tried:
+          type: integer
+        solved:
+          type: integer
+        submissions:
+          type: integer
+        last_verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+        last_submission_at:
+          type: string
+          format: date-time
+          nullable: true
+    ProblemRollupPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemRollup'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    TextSlice:
+      type: object
+      description: A window of lines of a text, with the totals needed to say "showing 10 of 4,203 lines".
+      required: [lines, from_line, to_line, total_lines, size_bytes, line_truncated]
+      properties:
+        lines:
+          type: array
+          description: The lines of the window without their line breaks (CR before LF dropped)
+          items:
+            type: string
+        from_line:
+          type: integer
+          description: 1-based number of the first line in `lines`; `total_lines + 1` when past the end
+        to_line:
+          type: integer
+          description: 1-based number of the last line in `lines`; `from_line - 1` when the window is empty
+        total_lines:
+          type: integer
+          description: Lines in the whole text; a last line without a line break counts
+        size_bytes:
+          type: integer
+        line_truncated:
+          type: boolean
+          description: A line of the window was longer than 10000 characters and was cut
+    SubmissionFilePart:
+      allOf:
+        - $ref: '#/components/schemas/TextSlice'
+        - type: object
+          required: [cut]
+          properties:
+            cut:
+              type: boolean
+              description: What was kept of the program's output is shorter than what it printed
+            unavailable:
+              type: boolean
+              description: The file could not be read (never stored, or removed); `lines` is empty
+    SubmissionTestDetail:
+      type: object
+      required:
+        [
+          submission_id,
+          position,
+          verdict,
+          is_sample,
+          time_ms,
+          memory_kb,
+          exit_code,
+          signal,
+          input,
+          expected,
+          output,
+          stderr,
+        ]
+      properties:
+        submission_id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+        verdict:
+          $ref: '#/components/schemas/TestVerdict'
+        is_sample:
+          type: boolean
+        time_ms:
+          type: integer
+        memory_kb:
+          type: integer
+        exit_code:
+          type: integer
+          nullable: true
+        signal:
+          type: integer
+          nullable: true
+        input:
+          allOf:
+            - $ref: '#/components/schemas/SubmissionFilePart'
+          nullable: true
+          description: Null when `part` asked for another part
+        expected:
+          allOf:
+            - $ref: '#/components/schemas/SubmissionFilePart'
+          nullable: true
+          description: Null when `part` asked for another part. A test without an expected output is `unavailable`
+        output:
+          allOf:
+            - $ref: '#/components/schemas/SubmissionFilePart'
+          nullable: true
+          description: What the program printed; null when `part` asked for another part or Judge sent none
+        stderr:
+          allOf:
+            - $ref: '#/components/schemas/SubmissionFilePart'
+          nullable: true
+          description: Null when `part` asked for another part or Judge sent none
+    StagedFile:
+      type: object
+      required: [sha256, size_bytes, total_lines]
+      properties:
+        sha256:
+          type: string
+          description: Of the normalised content; what `saveTestCases` refers to
+        size_bytes:
+          type: integer
+        total_lines:
+          type: integer
+    StageTextRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 1048576
+          description: At most 1 MiB and no NUL character
+    TestFileRef:
+      type: object
+      required: [sha256]
+      properties:
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    SaveTestCaseItem:
+      type: object
+      required: [is_sample]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: An existing testcase of this problem; left out for a new one
+        is_sample:
+          type: boolean
+        input:
+          $ref: '#/components/schemas/TestFileRef'
+        output:
+          $ref: '#/components/schemas/TestFileRef'
+    SaveTestCasesRequest:
+      type: object
+      required: [tests]
+      properties:
+        revision:
+          type: string
+          maxLength: 64
+          description: The `revision` of the list the changes started from
+        tests:
+          type: array
+          maxItems: 500
+          description: The testcases the problem should have afterwards, in order; those not listed are removed
+          items:
+            $ref: '#/components/schemas/SaveTestCaseItem'
+    TestFileSlice:
+      allOf:
+        - $ref: '#/components/schemas/TextSlice'
+        - type: object
+          required: [position, side]
+          properties:
+            position:
+              type: integer
+              description: Position of the testcase
+            side:
+              type: string
+              enum: [input, output]
+    StartGenerateRequest:
+      type: object
+      required: [solution_id]
+      properties:
+        solution_id:
+          type: string
+          format: uuid
+          description: A reference solution of this problem
+        test_ids:
+          type: array
+          minItems: 1
+          maxItems: 500
+          description: Testcases to run, each once; the others keep what they have. All of them when left out
+          items:
+            type: string
+            format: uuid
+    GenerateRun:
+      type: object
+      required:
+        [
+          test_id,
+          position,
+          status,
+          verdict,
+          error_code,
+          time_ms,
+          memory_kb,
+          stderr,
+          output,
+          same_as_current,
+        ]
+      properties:
+        test_id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        verdict:
+          type: string
+          nullable: true
+          description: Why a run failed, one of TLE, MLE, RE, OLE, ISE
+        error_code:
+          type: string
+          nullable: true
+          description: e.g. `COMPILE_ERROR`, `NO_OUTPUT` or `JUDGE_UNAVAILABLE`
+        time_ms:
+          type: integer
+          nullable: true
+        memory_kb:
+          type: integer
+          nullable: true
+        stderr:
+          type: string
+          nullable: true
+          description: The start of the standard error (at most 1000 characters)
+        output:
+          type: object
+          nullable: true
+          description: The generated expected output, ready to be put in `saveTestCases`
+          required: [sha256, size_bytes]
+          properties:
+            sha256:
+              type: string
+            size_bytes:
+              type: integer
+        same_as_current:
+          type: boolean
+          nullable: true
+          description: |
+            The output equals the testcase's current expected output as Judge compares (trailing
+            spaces and trailing blank lines do not count); null when there is nothing to compare
+    GenerateJob:
+      type: object
+      required: [id, status, error, created_at, deadline_at, finished_at, progress, runs]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, completed, stopped, timed_out, failed]
+        error:
+          type: object
+          nullable: true
+          description: Set when the job failed as a whole, e.g. `COMPILE_ERROR` when the solution does not compile
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+        deadline_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        progress:
+          type: object
+          required: [total, done, failed]
+          properties:
+            total:
+              type: integer
+            done:
+              type: integer
+            failed:
+              type: integer
+        runs:
+          type: array
+          description: In testcase order
+          items:
+            $ref: '#/components/schemas/GenerateRun'
     HealthResponse:
       type: object
       required: [status, version]
