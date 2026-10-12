@@ -170,7 +170,7 @@ export async function submitCode(
   client: Client,
   space: string,
   problem: string,
-  body: { language?: string; source?: string } = {}
+  body: { language?: string; source?: string; track?: string } = {}
 ) {
   return client.request('POST', problemUrl(space, problem, '/submissions'), {
     language: 'cpp',

@@ -332,6 +332,38 @@ export default class TrackRepository {
     };
   }
 
+  /**
+   * The Track a new submission is attributed to (GRD-93): among the Tracks that reach the
+   * problem through a Collection that is not archived, `preferredSlug` when given, otherwise
+   * the first in order. Staff may name any active Track; everybody else a Track they can see.
+   * `null` when none reaches it (staff trying a problem that sits in no Track); `undefined`
+   * when `preferredSlug` names a Track that does not reach it.
+   */
+  async trackForSubmission(
+    db: Db,
+    spaceId: string,
+    problemId: string,
+    viewer: Viewer,
+    staff: boolean,
+    preferredSlug?: string
+  ) {
+    const tracks = await db.track.findMany({
+      where: {
+        space_id: spaceId,
+        ...(staff ? { archived_at: null } : visibleTrackWhere(viewer)),
+        collections: {
+          some: {
+            collection: { archived_at: null, problems: { some: { problem_id: problemId } } },
+          },
+        },
+      },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      select: { id: true, slug: true },
+    });
+    if (preferredSlug) return tracks.find((track) => track.slug === preferredSlug) ?? undefined;
+    return tracks[0] ?? null;
+  }
+
   // --- track members ------------------------------------------------------
 
   findTrackMember(db: Db, trackId: string, userId: string) {

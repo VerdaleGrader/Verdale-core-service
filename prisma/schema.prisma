@@ -338,6 +338,9 @@ model Submission {
   // The exact version that was submitted to: results never change when the
   // problem is edited later.
   problem_version_id String           @db.Uuid
+  // The Track the solver was working in when they submitted (GRD-93); null when
+  // none (staff trying a problem outside every Track) or once the Track is deleted.
+  track_id           String?          @db.Uuid
   language           Language
   source             String
   source_bytes       Int
@@ -366,11 +369,14 @@ model Submission {
   user    User                   @relation(fields: [user_id], references: [id])
   problem Problem                @relation(fields: [problem_id], references: [id])
   version ProblemVersion         @relation(fields: [problem_version_id], references: [id])
+  track   Track?                 @relation(fields: [track_id], references: [id], onDelete: SetNull)
   results SubmissionTestResult[]
 
   // "My submissions of this problem", "everyone's submissions of this problem", newest first.
   @@index([user_id, problem_id, created_at(sort: Desc)])
   @@index([problem_id, created_at(sort: Desc)])
+  // Submissions made from a Track, newest first (the Space-wide pages).
+  @@index([track_id, created_at(sort: Desc)])
   // The dispatcher looks for queued submissions that are due.
   @@index([status, next_dispatch_at])
   @@map("submissions")
@@ -447,6 +453,7 @@ model Track {
   collections TrackCollection[]
   members     TrackMember[]
   invites     Invite[]
+  submissions Submission[]
 
   @@unique([space_id, slug])
   @@index([space_id, position])

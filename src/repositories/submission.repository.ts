@@ -45,6 +45,7 @@ export default class SubmissionRepository {
     data: {
       user_id: string;
       problem_id: string;
+      track_id?: string | null;
       problem_version_id: string;
       language: Language;
       source: string;

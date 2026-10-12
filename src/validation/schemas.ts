@@ -200,6 +200,7 @@ export const updateSolutionBody = z
 export const createSubmissionBody = z.object({
   language,
   source: solutionSource,
+  track: z.string().trim().min(1).max(64).optional(),
 });
 
 export const submissionListQuery = z.object({
@@ -343,3 +344,100 @@ export const generateBody = z.object({
 });
 
 export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });
+
+// --- The Space's submissions for staff (M3: GRD-93) ---------------------------
+
+const VERDICT_CODES = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'OLE', 'ISE'] as const;
+
+const optionalText = z
+  .string()
+  .trim()
+  .max(80)
+  .optional()
+  .transform((value) => value || undefined);
+
+/** `verdict=AC,WA` */
+const verdictList = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value ? value.split(',').map((item) => item.trim().toUpperCase()) : undefined
+  )
+  .pipe(z.array(z.enum(VERDICT_CODES)).min(1).max(8).optional());
+
+const listPage = { page: pagination.page, page_size: pagination.page_size };
+
+export const spaceSubmissionsQuery = z.object({
+  member: optionalText,
+  q: optionalText,
+  problem: optionalText,
+  track: optionalText,
+  verdict: verdictList,
+  language: z.enum(['c', 'cpp', 'python']).optional(),
+  version: z.coerce.number().int().min(1).max(100_000).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  sort: z.enum(['newest', 'oldest', 'member', 'tests_passed', 'time']).default('newest'),
+  page: pagination.page,
+  page_size: z.coerce.number().int().min(1).max(SUBMISSION_LIST_MAX_PAGE_SIZE).default(20),
+});
+
+const windowName = z.enum(['any', '7d', '30d']).default('any');
+const problemStatusFilter = z.enum(['all', 'published', 'draft', 'archived']).default('all');
+
+export const byMemberQuery = z.object({
+  q: optionalText,
+  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver', 'none']).optional(),
+  track: optionalText,
+  window: windowName,
+  sort: z.enum(['last_submission', 'solved', 'name']).default('last_submission'),
+  hide_empty: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  ...listPage,
+});
+
+export const memberProblemsQuery = z.object({
+  q: optionalText,
+  track: optionalText,
+  status: z.enum(['all', 'solved', 'unsolved']).default('all'),
+  sort: z.enum(['last_submission', 'attempts', 'name']).default('last_submission'),
+  ...listPage,
+});
+
+export const byTrackQuery = z.object({
+  q: optionalText,
+  visibility: z.enum(['space', 'members']).optional(),
+  window: windowName,
+  sort: z.enum(['track_order', 'last_submission', 'submissions']).default('track_order'),
+});
+
+export const trackProblemsQuery = z.object({
+  q: optionalText,
+  collection: optionalText,
+  status: problemStatusFilter,
+  sort: z.enum(['track_order', 'solved_fewest', 'last_submission']).default('track_order'),
+});
+
+export const byProblemQuery = z.object({
+  q: optionalText,
+  track: optionalText,
+  status: problemStatusFilter,
+  sort: z
+    .enum(['last_submission', 'submissions', 'solved_fewest', 'name'])
+    .default('last_submission'),
+  ...listPage,
+});
+
+export const versionsQuery = z.object({ problem: optionalText });
+
+export const submissionTestParams = submissionParams.extend({
+  position: z.coerce.number().int().min(1).max(100_000),
+});
+
+export const testDetailQuery = z.object({
+  part: z.enum(['input', 'expected', 'output', 'stderr']).optional(),
+  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
+  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
+});
