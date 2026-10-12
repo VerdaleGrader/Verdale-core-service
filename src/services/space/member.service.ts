@@ -1,6 +1,7 @@
 import type { PrismaClient, User } from '../../../generated/prisma/client';
-import { ConflictError, NotFoundError } from '@/errors';
+import { ConflictError, ForbiddenError, NotFoundError } from '@/errors';
 import TLogger, { Layer } from '@/logging/logger';
+import { canAssignRole, canRemoveMember } from '@/permissions/can';
 import { Db, isCheckViolation } from '@/repositories/db';
 import SpaceRepository from '@/repositories/space.repository';
 import TrackRepository from '@/repositories/track.repository';
@@ -14,7 +15,8 @@ export interface MemberDto extends PublicUser {
   joined_at: string;
 }
 
-const LAST_OWNER_MESSAGE = 'A Space needs at least one owner. Make someone else an owner first.';
+const OWNER_MESSAGE =
+  'A Space always has exactly one owner. Hand the Space over to another member first.';
 
 interface Target {
   user_id: string;
@@ -52,8 +54,25 @@ export default class MemberService {
   ): Promise<MemberDto> {
     const logger = this.logger.setContext('service.member.changeRole', requestId);
     const changed = await this.mutate(slug, user, username, async (tx, access, target) => {
-      if (target.role === 'owner' && role !== 'owner') {
-        await this.assertAnotherOwner(tx, access.space.id);
+      if (target.role === role) {
+        return this.spaces.setMemberRole(tx, access.space.id, target.user_id, role);
+      }
+      if (role === 'owner') {
+        // Making someone the owner hands the Space over: the old owner becomes
+        // an administrator. Demote first: the owner is unique in the database.
+        assertCan(user, 'space.transfer_ownership', access);
+        await this.spaces.setMemberRole(tx, access.space.id, user.id, 'administrator');
+        return this.spaces.setMemberRole(tx, access.space.id, target.user_id, 'owner');
+      }
+      if (target.role === 'owner' && access.role === 'owner') {
+        throw new ConflictError(OWNER_MESSAGE);
+      }
+      if (!canAssignRole(access.role, target.role, role)) {
+        throw new ForbiddenError(
+          target.role === 'owner'
+            ? 'To change the owner, hand the Space over to another member instead.'
+            : 'Only the owner can make or change an administrator.'
+        );
       }
       return this.spaces.setMemberRole(tx, access.space.id, target.user_id, role);
     });
@@ -74,7 +93,16 @@ export default class MemberService {
   async remove(user: User, slug: string, username: string, requestId: string): Promise<void> {
     const logger = this.logger.setContext('service.member.remove', requestId);
     const removed = await this.mutate(slug, user, username, async (tx, access, target) => {
-      if (target.role === 'owner') await this.assertAnotherOwner(tx, access.space.id);
+      if (!canRemoveMember(access.role, target.role)) {
+        if (target.role === 'owner' && access.role === 'owner') {
+          throw new ConflictError(OWNER_MESSAGE);
+        }
+        throw new ForbiddenError(
+          target.role === 'owner'
+            ? 'The owner cannot be removed.'
+            : 'Only the owner can remove an administrator.'
+        );
+      }
       await this.tracks.removeUserFromSpaceTracks(tx, access.space.id, target.user_id);
       return this.spaces.removeMember(tx, access.space.id, target.user_id);
     });
@@ -84,14 +112,14 @@ export default class MemberService {
     });
   }
 
-  /** A member leaves on their own. The last owner cannot (GRD-18). */
+  /** A member leaves on their own. The owner cannot: they hand the Space over first (GRD-18). */
   async leave(user: User, slug: string, requestId: string): Promise<void> {
     const logger = this.logger.setContext('service.member.leave', requestId);
     await this.runGuarded(() =>
       this.prisma.$transaction(async (tx) => {
         const access = await this.lockedAccess(tx, slug, user);
+        if (access.role === 'owner') throw new ConflictError(OWNER_MESSAGE);
         assertCan(user, 'space.leave', access);
-        if (access.role === 'owner') await this.assertAnotherOwner(tx, access.space.id);
         await this.tracks.removeUserFromSpaceTracks(tx, access.space.id, user.id);
         await this.spaces.removeMember(tx, access.space.id, user.id);
       })
@@ -130,18 +158,12 @@ export default class MemberService {
     );
   }
 
-  private async assertAnotherOwner(tx: Db, spaceId: string): Promise<void> {
-    if ((await this.spaces.countOwners(tx, spaceId)) <= 1) {
-      throw new ConflictError(LAST_OWNER_MESSAGE);
-    }
-  }
-
   /** The database trigger is the backstop for the last-owner rule. */
   private async runGuarded<T>(work: () => Promise<T>): Promise<T> {
     try {
       return await work();
     } catch (error) {
-      if (isCheckViolation(error)) throw new ConflictError(LAST_OWNER_MESSAGE);
+      if (isCheckViolation(error)) throw new ConflictError(OWNER_MESSAGE);
       throw error;
     }
   }

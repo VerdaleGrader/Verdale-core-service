@@ -19,7 +19,7 @@ Rules the database enforces (migration `add_tracks_and_collections`): slug forma
 
 ## What solvers see (GRD-81)
 
-Solvers, logged-in outsiders of a public Space, and visitors are treated alike: a problem exists for them only if it is **published** and sits in a Collection (not archived) of a Track they can see (not archived; open to the Space, or they were added to it). A Collection in several Tracks is visible when **any** of them is. Owners and editors need none of this.
+Solvers, logged-in outsiders of a public Space, and visitors are treated alike: a problem exists for them only if it is **published** and sits in a Collection (not archived) of a Track they can see (not archived; open to the Space, or they were added to it). A Collection in several Tracks is visible when **any** of them is. The staff (owner, administrator, editor, observer) need none of this and see every Track, Collection and problem.
 
 | Call                                              | Outside every visible Track                                                                        |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -27,7 +27,7 @@ Solvers, logged-in outsiders of a public Space, and visitors are treated alike: 
 | `GET …/problems/{slug}`, its PDF                  | 404, the same answer as for a problem that does not exist                                          |
 | `POST …/submissions`                              | 404                                                                                                |
 | `GET …/submissions` (own history)                 | still answered **if the person submitted to it before**, otherwise 404 (so slugs cannot be probed) |
-| `GET /submissions/{id}`                           | unchanged: author, owners and editors                                                              |
+| `GET /submissions/{id}`                           | unchanged: author and the staff                                                                    |
 | `GET …/collections/{slug}`, `GET …/tracks/{slug}` | 404 unless visible as above; solvers get published problems only, never drafts                     |
 
 The rule lives in one place for each shape: `can()` (`problem.view`, `submission.create`, `track.view` take `problemInTrack` / `track` facts), `TrackRepository.isProblemInVisibleTrack` for one problem and `problemInVisibleTrackWhere` for listings. Taking a problem out of its last Track therefore hides it and closes submissions, while leaving the history readable.
@@ -44,7 +44,11 @@ Removing someone from a Track takes only the Track membership; removing someone 
 
 ## Progression (GRD-82)
 
-A problem counts as **passed** when the person has at least one AC on it, on **any version**, so editing a problem later never takes progress away. Only **published** problems count, and a problem taken out of a Collection or Track leaves the denominator (and its AC leaves the numerator; it is back if the problem is). At Track level a problem in two Collections counts once; at Collection level it counts in each. `GET …/tracks/{slug}/progress` is the caller's; owners and editors may add `?username=` for a member, and `…/progress/members` lists every solver who can see the Track.
+A problem counts as **passed** when the person has at least one AC on it, on **any version**, so editing a problem later never takes progress away. Only **published** problems count, and a problem taken out of a Collection or Track leaves the denominator (and its AC leaves the numerator; it is back if the problem is). At Track level a problem in two Collections counts once; at Collection level it counts in each. `GET …/tracks/{slug}/progress` is the caller's; the staff (observers included, `track.view_progress`) may add `?username=` for a member, and `…/progress/members` lists every solver who can see the Track. Managing (`track.manage`, `track.manage_members`) is for owners, administrators and editors.
+
+## The Track a submission came from (GRD-93)
+
+`POST …/submissions` takes an optional `track` (slug). It must be a Track that reaches the problem through a Collection that is not archived, and that the person may see (staff: any active Track); otherwise 400. Left out, the submission is attributed to the first such Track in order, or to none when staff submit to a problem that sits in no Track. It is stored as `submissions.track_id` (set to null if the Track is ever deleted; archiving keeps it) and is what the Space-wide submission pages group by.
 
 ## PDF statements (GRD-73)
 

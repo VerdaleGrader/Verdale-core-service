@@ -38,6 +38,24 @@ export async function castSpace(
   return { owner, editor, solver, outsider, visitor: t.anonymous(), slug };
 }
 
+/** A new account that joins the Space with the given role, by invitation from the owner. */
+export async function joinSpace(
+  t: TestApp,
+  cast: Cast,
+  name: string,
+  role: 'administrator' | 'editor' | 'observer' | 'solver'
+): Promise<Client> {
+  const client = await t.login({
+    providerAccountId: name,
+    email: `${name}@example.com`,
+    usernameHint: name,
+  });
+  const invite = await cast.owner.request('POST', `/api/v1/spaces/${cast.slug}/invites`, { role });
+  const accepted = await client.request('POST', `/api/v1/invites/${invite.body.token}/accept`);
+  if (accepted.status !== 200) throw new Error(`could not add the ${role}: ${accepted.status}`);
+  return client;
+}
+
 export const problemUrl = (space: string, problem: string, suffix = '') =>
   `/api/v1/spaces/${space}/problems/${problem}${suffix}`;
 
@@ -152,7 +170,7 @@ export async function submitCode(
   client: Client,
   space: string,
   problem: string,
-  body: { language?: string; source?: string } = {}
+  body: { language?: string; source?: string; track?: string } = {}
 ) {
   return client.request('POST', problemUrl(space, problem, '/submissions'), {
     language: 'cpp',

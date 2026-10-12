@@ -3,7 +3,6 @@ import { NotFoundError } from '@/errors';
 import SpaceRepository from '@/repositories/space.repository';
 import SubmissionRepository from '@/repositories/submission.repository';
 import TrackRepository, { TrackWithContent } from '@/repositories/track.repository';
-import { assertManage } from '@/services/track/track.access';
 import {
   ProgressDto,
   progressOf,
@@ -11,12 +10,13 @@ import {
   visibleCollections,
 } from '@/services/track/track.mapper';
 import TrackService from '@/services/track/track.service';
+import { Role, assertCan } from '@/services/space/space.access';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
 import UserRepository from '@/repositories/user.repository';
 
 export interface MemberProgressDto {
   user: PublicUser;
-  role: 'owner' | 'editor' | 'solver';
+  role: Role;
   progress: ProgressDto;
   collections: Array<{ id: string; slug: string; name: string; progress: ProgressDto }>;
 }
@@ -49,7 +49,7 @@ export default class ProgressService {
     private readonly trackService: TrackService
   ) {}
 
-  /** My progress in a Track the caller can see. Owners and editors may ask about another member. */
+  /** My progress in a Track the caller can see. The staff may ask about another member. */
   async forUser(
     user: User,
     slug: string,
@@ -64,8 +64,8 @@ export default class ProgressService {
     );
     let subject: User = user;
     if (username !== undefined && username.toLowerCase() !== user.username) {
-      // Only owners and editors may look at someone else's progress.
-      assertManage(user, 'track.manage', access);
+      // Only the staff may look at someone else's progress.
+      assertCan(user, 'track.view_progress', access);
       const found = await this.users.findByUsername(this.prisma, username.toLowerCase());
       const membership = found
         ? await this.spaces.findMembership(this.prisma, access.space.id, found.id)
@@ -99,16 +99,15 @@ export default class ProgressService {
     };
   }
 
-  /** Owners and editors: how far each person who can see the Track has got. */
+  /** The staff: how far each person who can see the Track has got. */
   async forMembers(
     user: User,
     slug: string,
     trackSlug: string
   ): Promise<{ items: MemberProgressDto[] }> {
-    const { access, track } = await this.trackService.loadForManager(
+    const { access, track } = await this.trackService.loadForProgress(
       this.prisma,
       user,
-      'track.manage',
       slug,
       trackSlug
     );

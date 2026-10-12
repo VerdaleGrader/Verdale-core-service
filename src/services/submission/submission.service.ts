@@ -14,6 +14,7 @@ import SpaceRepository from '@/repositories/space.repository';
 import SubmissionRepository, { SubmissionRecord } from '@/repositories/submission.repository';
 import TrackRepository from '@/repositories/track.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import { isWriter } from '@/permissions/can';
 import { isAuthor } from '@/services/problem/problem.access';
 import { currentVersionOf } from '@/services/problem/problem.mapper';
 import ProblemService from '@/services/problem/problem.service';
@@ -30,6 +31,8 @@ import { Role, SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/sp
 export interface CreateSubmissionInput {
   language: string;
   source: string;
+  /** The Track the solver is working in; must reach the problem. Left out: the first that does. */
+  track?: string;
 }
 
 export interface SubmissionListInput {
@@ -98,10 +101,26 @@ export default class SubmissionService {
       ]);
     }
 
+    // The Track it was submitted from (GRD-93). Staff may try a problem that sits in no Track.
+    const track = await this.tracks.trackForSubmission(
+      this.prisma,
+      access.space.id,
+      problem.id,
+      { userId: user.id },
+      isAuthor(user, access),
+      input.track?.toLowerCase()
+    );
+    if (track === undefined) {
+      throw new ValidationError([
+        { field: 'track', message: 'This Track does not reach this problem.' },
+      ]);
+    }
+
     const testStats = await this.tests.stats(this.prisma, version.id);
     const created = await this.submissions.create(this.prisma, {
       user_id: user.id,
       problem_id: problem.id,
+      track_id: track?.id ?? null,
       problem_version_id: version.id,
       language: input.language as 'c' | 'cpp' | 'python',
       source: input.source,
@@ -137,7 +156,7 @@ export default class SubmissionService {
       throw new NotFoundError('Problem not found.');
     }
     if (input.scope === 'all' && !author) {
-      throw new ForbiddenError("Only owners and editors can see everyone's submissions.");
+      throw new ForbiddenError("Only the Space's staff can see everyone's submissions.");
     }
     const { rows, total } = await this.submissions.list(this.prisma, {
       problemId: problem.id,
@@ -155,7 +174,7 @@ export default class SubmissionService {
   }
 
   /**
-   * One submission. The author and the Space's owners and editors can read it;
+   * One submission. The author and the Space's staff can read it;
    * everyone else gets 404, so a submission's existence is not revealed.
    * `pollJudge` also asks Judge whether the job has started (for the live stream).
    */
@@ -228,7 +247,7 @@ export default class SubmissionService {
     if (!allowed) throw new NotFoundError('Submission not found.');
   }
 
-  /** Checking again needs the right to submit here, and being the author or an owner/editor. */
+  /** Checking again needs the right to submit here, and being the author or someone who can edit problems. */
   private async mayRejudge(
     user: User,
     access: SpaceAccess,
@@ -246,7 +265,8 @@ export default class SubmissionService {
     if (!can(actorOf(user), 'submission.create', resourceOf(access, { problemInTrack: inTrack }))) {
       return false;
     }
-    return submission.user_id === user.id || isAuthor(user, access);
+    // An observer reads everything but changes nothing, so cannot trigger a re-judge.
+    return submission.user_id === user.id || isWriter(access.role);
   }
 
   private async present(

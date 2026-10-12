@@ -5,7 +5,7 @@ import {
   isValidGroupSlug,
 } from '@/constants/identifiers';
 import { TRACK_LIMITS } from '@/constants/limits';
-import { ConflictError, NotFoundError, ValidationError } from '@/errors';
+import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '@/errors';
 import { can } from '@/permissions/can';
 import TLogger, { Layer } from '@/logging/logger';
 import { Db, isUniqueViolation } from '@/repositories/db';
@@ -83,6 +83,20 @@ export default class TrackService {
     const track = await this.tracks.findTrackBySlug(db, access.space.id, trackSlug.toLowerCase());
     if (!track) throw new NotFoundError('Track not found.');
     return { access, track, user: manager };
+  }
+
+  /**
+   * For the staff, observers included: reading how people are doing in a Track. It stays
+   * available in an archived Space (read-only, not secret), unlike managing.
+   */
+  async loadForProgress(db: Db, user: User | null, slug: string, trackSlug: string) {
+    const access = await this.spaceService.load(db, slug, user);
+    assertCan(user, 'space.view', access);
+    if (!user) throw new UnauthorizedError('Please log in.');
+    assertCan(user, 'track.view_progress', access);
+    const track = await this.tracks.findTrackBySlug(db, access.space.id, trackSlug.toLowerCase());
+    if (!track) throw new NotFoundError('Track not found.');
+    return { access, track };
   }
 
   private async mayViewTrack(

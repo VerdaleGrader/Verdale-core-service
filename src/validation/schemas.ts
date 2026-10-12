@@ -78,10 +78,12 @@ export const updateMeBody = z
     message: 'Send at least one field to change.',
   });
 
-export const changeRoleBody = z.object({ role: z.enum(['owner', 'editor', 'solver']) });
+export const changeRoleBody = z.object({
+  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver']),
+});
 
 export const createInviteBody = z.object({
-  role: z.enum(['editor', 'solver']),
+  role: z.enum(['administrator', 'editor', 'observer', 'solver']),
   username: z.string().trim().min(1).max(64).optional(),
   expires_in_days: z.number().int().min(1).max(30).default(7),
 });
@@ -198,6 +200,7 @@ export const updateSolutionBody = z
 export const createSubmissionBody = z.object({
   language,
   source: solutionSource,
+  track: z.string().trim().min(1).max(64).optional(),
 });
 
 export const submissionListQuery = z.object({
@@ -296,4 +299,145 @@ export const statementPdfQuery = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+});
+
+// --- Testcases page: staged files, one save, preview, generate (M3: GRD-108) ---
+
+const sha256Ref = z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Not a file hash.') });
+
+/** Pasted text becomes a staged file; the body limit (1 MiB) keeps pasting for small testcases. */
+export const stageTextBody = z.object({
+  text: z
+    .string()
+    .max(1024 * 1024, 'Use Upload files for anything over 1 MiB.')
+    .refine((value) => !value.includes('\u0000'), 'Remove the NUL character (U+0000).'),
+});
+
+export const batchTestsBody = z.object({
+  revision: z.string().min(1).max(64).optional(),
+  tests: z
+    .array(
+      z.object({
+        id: z.uuid().optional(),
+        is_sample: z.boolean(),
+        input: sha256Ref.optional(),
+        output: sha256Ref.optional(),
+      })
+    )
+    .max(500),
+});
+
+export const testFileParams = testParams.extend({ side: z.enum(['input', 'output']) });
+
+export const fileSliceQuery = z.object({
+  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
+  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
+  inline: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+
+export const generateBody = z.object({
+  solution_id: z.uuid(),
+  test_ids: z.array(z.uuid()).min(1).max(500).optional(),
+});
+
+export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });
+
+// --- The Space's submissions for staff (M3: GRD-93) ---------------------------
+
+const VERDICT_CODES = ['AC', 'WA', 'TLE', 'MLE', 'RE', 'CE', 'OLE', 'ISE'] as const;
+
+const optionalText = z
+  .string()
+  .trim()
+  .max(80)
+  .optional()
+  .transform((value) => value || undefined);
+
+/** `verdict=AC,WA` */
+const verdictList = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value ? value.split(',').map((item) => item.trim().toUpperCase()) : undefined
+  )
+  .pipe(z.array(z.enum(VERDICT_CODES)).min(1).max(8).optional());
+
+const listPage = { page: pagination.page, page_size: pagination.page_size };
+
+export const spaceSubmissionsQuery = z.object({
+  member: optionalText,
+  q: optionalText,
+  problem: optionalText,
+  track: optionalText,
+  verdict: verdictList,
+  language: z.enum(['c', 'cpp', 'python']).optional(),
+  version: z.coerce.number().int().min(1).max(100_000).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  sort: z.enum(['newest', 'oldest', 'member', 'tests_passed', 'time']).default('newest'),
+  page: pagination.page,
+  page_size: z.coerce.number().int().min(1).max(SUBMISSION_LIST_MAX_PAGE_SIZE).default(20),
+});
+
+const windowName = z.enum(['any', '7d', '30d']).default('any');
+const problemStatusFilter = z.enum(['all', 'published', 'draft', 'archived']).default('all');
+
+export const byMemberQuery = z.object({
+  q: optionalText,
+  role: z.enum(['owner', 'administrator', 'editor', 'observer', 'solver', 'none']).optional(),
+  track: optionalText,
+  window: windowName,
+  sort: z.enum(['last_submission', 'solved', 'name']).default('last_submission'),
+  hide_empty: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  ...listPage,
+});
+
+export const memberProblemsQuery = z.object({
+  q: optionalText,
+  track: optionalText,
+  status: z.enum(['all', 'solved', 'unsolved']).default('all'),
+  sort: z.enum(['last_submission', 'attempts', 'name']).default('last_submission'),
+  ...listPage,
+});
+
+export const byTrackQuery = z.object({
+  q: optionalText,
+  visibility: z.enum(['space', 'members']).optional(),
+  window: windowName,
+  sort: z.enum(['track_order', 'last_submission', 'submissions']).default('track_order'),
+});
+
+export const trackProblemsQuery = z.object({
+  q: optionalText,
+  collection: optionalText,
+  status: problemStatusFilter,
+  sort: z.enum(['track_order', 'solved_fewest', 'last_submission']).default('track_order'),
+});
+
+export const byProblemQuery = z.object({
+  q: optionalText,
+  track: optionalText,
+  status: problemStatusFilter,
+  sort: z
+    .enum(['last_submission', 'submissions', 'solved_fewest', 'name'])
+    .default('last_submission'),
+  ...listPage,
+});
+
+export const versionsQuery = z.object({ problem: optionalText });
+
+export const submissionTestParams = submissionParams.extend({
+  position: z.coerce.number().int().min(1).max(100_000),
+});
+
+export const testDetailQuery = z.object({
+  part: z.enum(['input', 'expected', 'output', 'stderr']).optional(),
+  from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
+  max_lines: z.coerce.number().int().min(1).max(1000).default(10),
 });
