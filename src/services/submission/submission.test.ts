@@ -299,7 +299,7 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
           .$executeRaw`UPDATE submissions SET next_dispatch_at = now() - interval '1 second'`;
         t.app.dispatcher!.start(20);
         try {
-          for (let i = 0; i < 300 && t.judge.jobs.length === 0; i++)
+          for (let i = 0; i < 100 && t.judge.jobs.length === 0; i++)
             await new Promise((r) => setTimeout(r, 20));
         } finally {
           await t.app.dispatcher!.stop();
@@ -578,19 +578,10 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
       await t.settle();
       t.judge.running.add(t.judge.last.job_id);
       const stream = cast.solver.text('GET', `/api/v1/submissions/${body.id}/events`);
-      // Wait until the stream has noticed the job running, then let it finish.
-      for (let i = 0; i < 300; i++) {
-        const row = await t.prisma.submission.findUniqueOrThrow({ where: { id: body.id } });
-        if (row.status === 'running') break;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
+      await new Promise((resolve) => setTimeout(resolve, 80));
       await t.deliver(jobResult(t.judge.last));
       const events = parse((await stream).text);
-      // A repeated "running" (another field changed) is not a different state.
-      const states = events
-        .map((event) => event.status)
-        .filter((status, index, all) => status !== all[index - 1]);
-      expect(states).toEqual(['queued', 'running', 'completed']);
+      expect(events.map((event) => event.status)).toEqual(['queued', 'running', 'completed']);
     });
 
     it('a connection to a finished submission gets that one event and closes (a reconnect loses nothing)', async () => {

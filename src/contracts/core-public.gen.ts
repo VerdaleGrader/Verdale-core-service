@@ -149,7 +149,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Public profile (username, display name and picture only) */
+    /** Public profile (username and display name only) */
     get: operations['getUser'];
     put?: never;
     post?: never;
@@ -270,7 +270,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** Edit name, description or visibility (owner or administrator; only the owner can change visibility; the slug never changes) */
+    /** Edit name, description or visibility (owner only; the slug never changes) */
     patch: operations['updateSpace'];
     trace?: never;
   };
@@ -323,18 +323,15 @@ export interface paths {
     put?: never;
     post?: never;
     /**
-     * Remove a member (owner or administrator)
-     * @description The owner cannot be removed (409); an administrator can only remove editors, observers and solvers.
+     * Remove a member (owner only)
+     * @description Removing the last owner is refused with 409.
      */
     delete: operations['removeMember'];
     options?: never;
     head?: never;
     /**
-     * Change a member's role (owner or administrator)
-     * @description The owner can set any role. An administrator can only move editors, observers and
-     *     solvers between those three roles (403 otherwise). Sending `owner` hands the Space
-     *     over (owner only): the previous owner becomes an administrator. The owner cannot be
-     *     demoted directly (409).
+     * Change a member's role (owner only)
+     * @description Demoting the last owner is refused with 409.
      */
     patch: operations['changeMemberRole'];
     trace?: never;
@@ -350,7 +347,7 @@ export interface paths {
     put?: never;
     /**
      * Leave a Space
-     * @description The owner cannot leave (409); hand the Space over first. Allowed in an archived Space.
+     * @description The last owner cannot leave (409). Allowed in an archived Space.
      */
     post: operations['leaveSpace'];
     delete?: never;
@@ -366,11 +363,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Pending, unexpired invitations of a Space (owner or administrator) */
+    /** Pending, unexpired invitations of a Space (owner only) */
     get: operations['listSpaceInvites'];
     put?: never;
     /**
-     * Invite by link, or by username (owner or administrator)
+     * Invite by link, or by username (owner only)
      * @description Without `username` the result carries a `link` that anyone logged in can use once.
      *     With `username` only that user can answer it. The `token` is returned once and only
      *     its hash is stored. Invitations never grant `owner`.
@@ -392,7 +389,7 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Revoke a pending invitation (owner or administrator) */
+    /** Revoke a pending invitation (owner only) */
     delete: operations['revokeInvite'];
     options?: never;
     head?: never;
@@ -454,236 +451,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/spaces/{slug}/tracks': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tracks the caller can reach, in order
-     * @description Staff (owner, administrator, editor, observer) see every Track; everyone else only active Tracks open to the Space or that they joined. A private Space answers 404 to outsiders.
-     */
-    get: operations['listTracks'];
-    put?: never;
-    /** Create a Track (owner, administrator or editor) */
-    post: operations['createTrack'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/order': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Set the order of all active Tracks
-     * @description Send every active Track exactly once; otherwise 409 `ORDER_OUT_OF_DATE`.
-     */
-    put: operations['reorderTracks'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * A Track with its Collections, problems and the caller's progression
-     * @description A Track the caller cannot reach (members-only and not added, or archived) is 404.
-     */
-    get: operations['getTrack'];
-    put?: never;
-    post?: never;
-    /** Archive a Track */
-    delete: operations['archiveTrack'];
-    options?: never;
-    head?: never;
-    /** Edit a Track, or archive or restore it */
-    patch: operations['updateTrack'];
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/collections': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Set the Collections of a Track and their order */
-    put: operations['setTrackCollections'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/progress': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** How far each person has got in a Track (staff only) */
-    get: operations['getTrackProgress'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/members': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Members of a Track (staff) */
-    get: operations['listTrackMembers'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/members/{username}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Take a person out of a Track (they stay in the Space) */
-    delete: operations['removeTrackMember'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/invites': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Pending invitations to a Track (staff) */
-    get: operations['listTrackInvites'];
-    put?: never;
-    /**
-     * Invite someone to a Track, by link or by username
-     * @description Whoever accepts joins the Space as a **solver** (if not a member yet) and the Track. The role of an existing member does not change.
-     */
-    post: operations['createTrackInvite'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/tracks/{trackSlug}/invites/{inviteId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Revoke a pending Track invitation */
-    delete: operations['revokeTrackInvite'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/collections': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Collections the caller can reach
-     * @description Staff see all of them, also those in no Track. Everyone else only Collections in a Track they can reach.
-     */
-    get: operations['listCollections'];
-    put?: never;
-    /** Create a Collection (owner, administrator or editor) */
-    post: operations['createCollection'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/collections/{collectionSlug}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** A Collection with its problems and the caller's progression */
-    get: operations['getCollection'];
-    put?: never;
-    post?: never;
-    /** Archive a Collection */
-    delete: operations['archiveCollection'];
-    options?: never;
-    head?: never;
-    /** Edit a Collection, or archive or restore it */
-    patch: operations['updateCollection'];
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/collections/{collectionSlug}/problems': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Set the problems of a Collection and their order
-     * @description Drafts may be added; solvers do not see them.
-     */
-    put: operations['setCollectionProblems'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Add and remove several problems at once */
-    patch: operations['changeCollectionProblems'];
-    trace?: never;
-  };
   '/api/v1/spaces/{slug}/problems': {
     parameters: {
       query?: never;
@@ -693,10 +460,8 @@ export interface paths {
     };
     /**
      * Problems of a Space
-     * @description Visitors and solvers only ever see `published` problems that sit in a Collection of a Track
-     *     they can reach (see Tracks), whatever `status` says. A problem outside every such Track
-     *     answers 404 to them everywhere (detail, submit), as a private Space would.
-     *     Owners, administrators, editors and observers can also list `draft` and `archived` problems, or `all`
+     * @description Visitors and solvers only ever see `published` problems, whatever `status` says.
+     *     Owners and editors can also list `draft` and `archived` problems, or `all`
      *     (default `published`); `mine=true` keeps the ones they created.
      *     A private Space answers 404 to everyone who is not a member.
      */
@@ -782,8 +547,8 @@ export interface paths {
     /**
      * Publish the draft (owner or editor)
      * @description Makes the draft the published, immutable version. Needs a statement, at least
-     *     one sample test, one test in total with an expected output for every test, one allowed
-     *     language and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
+     *     one sample test, one test in total, one allowed language and a primary reference
+     *     solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
      *     Provisional: Milestone 4 puts the verification run (reference solution against
      *     every test on Judge) in front of this step.
      */
@@ -836,53 +601,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/statement-pdf': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Upload the PDF statement of the draft (owner, administrator or editor)
-     * @description `multipart/form-data` with one `file` part. The bytes must be a PDF (`%PDF-` header, readable,
-     *     not password-protected), at most `constraints.statement_pdf.max_bytes` and `max_pages` pages.
-     *     The file is stored in the private bucket under its SHA-256 and the draft switches to `pdf` mode.
-     *     A new upload replaces the previous one. Sample input and output stay separate fields.
-     */
-    put: operations['uploadStatementPdf'];
-    post?: never;
-    /** Take the PDF off the draft and go back to Markdown (owner, administrator or editor) */
-    delete: operations['removeStatementPdf'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/statement.pdf': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * The PDF statement
-     * @description Same visibility as the problem: a solver gets the current version only when the problem is
-     *     in a Track they can reach; anyone else gets 404. Staff can pass `draft=true` for the draft they
-     *     are editing. Sent as `application/pdf` with `X-Content-Type-Options: nosniff` and
-     *     `Content-Security-Policy: sandbox; default-src 'none'`, so scripts in a PDF cannot run on our origin.
-     */
-    get: operations['getStatementPdf'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/v1/assets/{name}': {
     parameters: {
       query?: never;
@@ -911,30 +629,9 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Tests of the draft, with totals and limits (owner, administrator, editor, observer)
-     * @description A testcase can wait for its expected output: `output_sha256` and `output_size_bytes` are
-     *     then null and `summary.missing_output_count` counts it (publishing is blocked until none
-     *     is left, see `PublishCheck`). `revision` identifies the current order, files and
-     *     visibility; send it back to `saveTestCases` so two people editing at once cannot
-     *     overwrite each other.
-     */
+    /** Tests of the draft, with totals and limits (owner or editor) */
     get: operations['listTestCases'];
-    /**
-     * Save every change of the testcases page at once (owner or editor)
-     * @description `tests` is the list the problem should have afterwards, in order; a testcase that is
-     *     not listed is removed. An entry with `id` keeps that testcase; without `id` it is new
-     *     and needs an `input`. `input` and `output` refer to files by hash, uploaded earlier with
-     *     `stageTestFile` or created by Generate; a left-out file stays as it is (a new testcase
-     *     without `output` has none yet). Either everything is saved or nothing.
-     *     `revision` is the one `listTestCases` returned; when the testcases have changed since,
-     *     409 `TESTS_CHANGED` and nothing is saved. Without it the check is skipped.
-     *     Other 409 codes: `SAMPLE_LIMIT_REACHED`, `SAMPLE_TOO_LARGE`, `TEST_LIMIT_REACHED`,
-     *     `TEST_SIZE_LIMIT_REACHED`, `VERSION_PUBLISHED`, `PROBLEM_ARCHIVED`. An id that is not a
-     *     testcase of this problem, a duplicate id or a file that was never uploaded is 400 with
-     *     one `details` entry per problem (field `tests[0].input` and the like).
-     */
-    put: operations['saveTestCases'];
+    put?: never;
     /**
      * Add a test at the end (owner or editor)
      * @description `multipart/form-data` with parts `input` and `output` (files) and optional `is_sample`
@@ -943,32 +640,6 @@ export interface paths {
      *     file and the reason. Identical content is stored once. Only the draft can change.
      */
     post: operations['createTestCase'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/files': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Check and store one file for a later save (owner or editor)
-     * @description Either `multipart/form-data` with the part `file`, or JSON `{ "text": "..." }` for pasted
-     *     text. The file is checked and normalised as described in `TestCase` and stored by its
-     *     SHA-256; the problem does not change until `saveTestCases` refers to the hash. Identical
-     *     content is stored once and a file nobody uses is simply left unreferenced. A file that is
-     *     binary, has a NUL, or is over 8 MiB is 400 with `details` field `file` naming the file.
-     *     Pasted text over 1 MiB is 413. Only while the draft is open (409 otherwise). Limited to
-     *     300 requests per minute.
-     */
-    post: operations['stageTestFile'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1028,10 +699,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * The input file of a test (owner, administrator, editor, observer)
-     * @description Sent as an attachment; `inline=true` opens it as text instead.
-     */
+    /** The input file of a test (owner or editor) */
     get: operations['downloadTestInput'];
     put?: never;
     post?: never;
@@ -1048,100 +716,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * The expected output file of a test (owner, administrator, editor, observer)
-     * @description Sent as an attachment; `inline=true` opens it as text instead. 404 while the testcase has no expected output yet.
-     */
+    /** The expected output file of a test (owner or editor) */
     get: operations['downloadTestOutput'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/tests/{testId}/files/{side}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * A window of lines of a test's input or expected output (owner, administrator, editor, observer)
-     * @description For the preview (the first 10 lines) and "View all" (up to 1000 lines a window) of the
-     *     testcases page. 404 for `output` while the testcase has no expected output yet.
-     */
-    get: operations['getTestFileSlice'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Create expected outputs by running a reference solution (owner or editor)
-     * @description Runs the saved solution on the inputs of the chosen testcases (all of them when
-     *     `test_ids` is left out), one Judge job per testcase, at most three at a time. Nothing in
-     *     the problem changes: each finished run offers its `output` as a hash that goes into
-     *     `saveTestCases` when the author accepts it. Answers 202 with the job; follow it with
-     *     `getGenerate`. One job at a time per problem (409 `GENERATE_RUNNING`); the job gives up
-     *     after 10 minutes. A solution or testcase that is not of this problem is 404 / 400.
-     */
-    post: operations['startGenerate'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Progress and results of a Generate job (owner, administrator, editor, observer)
-     * @description Poll it while `status` is `running`. Finished jobs are kept for 24 hours, so closing the
-     *     page does not lose the results.
-     */
-    get: operations['getGenerate'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/problems/{problemSlug}/generate/{jobId}/stop': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Stop a Generate job (owner or editor)
-     * @description Keeps the runs that already finished. Stopping a job that is no longer running changes nothing.
-     */
-    post: operations['stopGenerate'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1216,166 +794,8 @@ export interface paths {
      *     Answers 202 with the submission in status `queued` straight away; follow it with the
      *     events stream or by polling. If Judge is unavailable the submission is kept and handed
      *     over later. Limited to 10 submissions per minute per user (429 `RATE_LIMITED`).
-     *     `track` names the Track the solver is working in; it must reach the problem for this
-     *     person (400 with `details` field `track` otherwise). Left out, the first Track that
-     *     reaches the problem is used, and none when no Track does. Staff reach every active Track.
-     *     The Track is shown to staff in the Space-wide submission lists.
      */
     post: operations['createSubmission'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Every submission of a Space, filterable (owner, administrator, editor, observer)
-     * @description The Space-wide list for staff (GRD-93). Solvers, visitors and non-members get 403 / 404
-     *     as for any private part of the Space. `member` and `problem` are exact (case-insensitive)
-     *     username and problem slug; `q` searches the username, display name, problem slug and title.
-     *     `track` is a Track slug, or `none` for submissions made from no Track. `verdict` takes
-     *     several codes separated by commas (`AC,WA`). `from` and `to` bound the submission time.
-     *     An unknown Track is 404.
-     */
-    get: operations['listSpaceSubmissions'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/versions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Problem versions that exist in the Space (owner, administrator, editor, observer)
-     * @description Feeds the version filter of the lists. `problem` limits it to one problem slug.
-     */
-    get: operations['listSubmissionVersions'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/by-member': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Submissions rolled up per person (owner, administrator, editor, observer)
-     * @description One row per member, plus anyone who submitted to a public Space without joining it
-     *     (`role` is then null). `hide_empty` (default true) drops people with no submission in
-     *     the window. `role=none` keeps people without a role. `track` is a Track slug or `none`.
-     *     `window` limits the counted submissions to the last 7 or 30 days.
-     */
-    get: operations['listSubmissionsByMember'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/by-member/{username}/problems': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * The problems one person tried (owner, administrator, editor, observer)
-     * @description Second page of "by member". 404 for a user who is neither a member nor has submitted
-     *     in this Space. The response carries the person's rollup as `member`.
-     */
-    get: operations['listMemberProblems'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/by-track': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Submissions rolled up per Track (owner, administrator, editor, observer)
-     * @description One row per active Track, not paged. `members` is the Track's audience (its members when
-     *     the Track is members-only, otherwise every member of the Space); `members_finished` counts
-     *     those who solved every published problem of the Track.
-     */
-    get: operations['listSubmissionsByTrack'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/by-track/{trackSlug}/problems': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * The problems of a Track with how people got on (owner, administrator, editor, observer)
-     * @description Not paged. Drafts and archived problems of the Track are included (`status` filters
-     *     them), which solvers never see. `most_common_failure` is the most frequent failing
-     *     verdict and test of the problem within this Track. 404 for an unknown Track.
-     */
-    get: operations['listTrackSubmissionProblems'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/spaces/{slug}/submissions/by-problem': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Submissions rolled up per problem (owner, administrator, editor, observer)
-     * @description `track` is a Track slug, or `none` for problems that sit in no active Track.
-     *     `status` filters the problem status.
-     */
-    get: operations['listSubmissionsByProblem'];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1391,36 +811,11 @@ export interface paths {
     };
     /**
      * One submission with its source and per-test results
-     * @description Visible to its author, and to owners, administrators, editors and observers of the Space (decision log, GRD-46).
+     * @description Visible to its author, and to owners and editors of the Space (decision log, GRD-46).
      *     Anyone else gets 404. Results never contain the content of a hidden test; previews
      *     exist for sample tests only.
      */
     get: operations['getSubmission'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/submissions/{submissionId}/tests/{position}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * One test of a submission, hidden tests included (owner, administrator, editor, observer)
-     * @description The input, the expected output, what the program printed and its standard error, as
-     *     windows of lines. Only people who may read hidden tests reach it; anyone else, the author
-     *     included, gets 404 (the author reads samples in `getSubmission`). Core asks Judge to keep
-     *     the start of each test's output (64 KiB of stdout and 8 KiB of stderr), so `output` and
-     *     `stderr` can be `cut`. Use `part` to fetch one of the four, the others are then null.
-     *     `input` or `expected` that cannot be read are `unavailable`.
-     */
-    get: operations['getSubmissionTest'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1481,13 +876,8 @@ export interface components {
   schemas: {
     /** @enum {string} */
     OAuthProvider: 'github' | 'google';
-    /**
-     * @description Strongest first: owner > administrator > editor > observer > solver. A visitor or
-     *     a signed-in non-member is a "viewer" and has no stored role (`my_role` is null).
-     *     Exactly one owner per Space.
-     * @enum {string}
-     */
-    Role: 'owner' | 'administrator' | 'editor' | 'observer' | 'solver';
+    /** @enum {string} */
+    Role: 'owner' | 'editor' | 'solver';
     /** @description The account owner's view. Other users never see `id` or `email`. */
     Me: {
       /** Format: uuid */
@@ -1496,20 +886,16 @@ export interface components {
       /** @description 3-32 chars, lower-case letters, digits, `_` or `-`, starting with a letter or digit */
       username: string;
       display_name: string;
-      /** @description The sign-in provider's profile picture (https URL), refreshed at every sign-in. Null when the provider has none: show the initials of `display_name`. */
-      avatar_url: string | null;
       /** Format: date-time */
       created_at: string;
     };
     UpdateMeRequest: {
-      /** @description Trimmed; no control characters. Rate limited (429). */
       display_name?: string;
       username?: string;
     };
     PublicUser: {
       username: string;
       display_name: string;
-      avatar_url: string | null;
     };
     Space: {
       /** Format: uuid */
@@ -1546,8 +932,6 @@ export interface components {
        * @enum {string}
        */
       visibility: 'public' | 'private';
-      /** @description Name of the Track every Space starts with. "General" when left out. */
-      track_name?: string;
     };
     UpdateSpaceRequest: {
       name?: string;
@@ -1561,11 +945,8 @@ export interface components {
       joined_at: string;
     };
     CreateInviteRequest: {
-      /**
-       * @description An administrator can only invite editor, observer or solver.
-       * @enum {string}
-       */
-      role: 'administrator' | 'editor' | 'observer' | 'solver';
+      /** @enum {string} */
+      role: 'editor' | 'solver';
       /** @description Address the invitation to one user. Omit for a link invitation. */
       username?: string;
       /** @default 7 */
@@ -1578,12 +959,8 @@ export interface components {
         name: string;
         slug: string;
       };
-      /** @description Set for an invitation to one Track; accepting it makes the person a solver of the Space */
-      track: {
-        name: string;
-        slug: string;
-      } | null;
-      role: components['schemas']['Role'];
+      /** @enum {string} */
+      role: 'editor' | 'solver';
       /** @enum {string} */
       status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
       /** Format: date-time */
@@ -1605,11 +982,6 @@ export interface components {
         name: string;
         slug: string;
       };
-      /** @description Set for an invitation to one Track; accepting it makes the person a solver of the Space */
-      track: {
-        name: string;
-        slug: string;
-      } | null;
       role: components['schemas']['Role'];
       /** @enum {string} */
       status: 'accepted' | 'declined';
@@ -1660,11 +1032,6 @@ export interface components {
       memory_limit_kb: components['schemas']['Range'];
       languages: components['schemas']['Language'][];
       tests: components['schemas']['TestLimits'];
-      /** @description Limits of an uploaded PDF statement. */
-      statement_pdf: {
-        max_bytes: number;
-        max_pages: number;
-      };
       images: {
         max_bytes: number;
         content_types: string[];
@@ -1688,7 +1055,6 @@ export interface components {
     UpdateProblemRequest: {
       title?: string;
       statement?: string;
-      statement_mode?: components['schemas']['StatementMode'];
       time_limit_ms?: number;
       memory_limit_kb?: number;
       allowed_languages?: components['schemas']['Language'][];
@@ -1739,14 +1105,8 @@ export interface components {
       status: components['schemas']['ProblemStatus'];
       space: components['schemas']['SpaceRef'];
       title: string;
-      /** @description Markdown with `$...$` and `$$...$$` maths. Empty in `pdf` mode. */
+      /** @description Markdown with `$...$` and `$$...$$` maths */
       statement: string;
-      statement_mode: components['schemas']['StatementMode'];
-      /** @description The PDF in `pdf` mode; fetch it from `GET .../statement.pdf`. */
-      statement_pdf: {
-        size_bytes: number;
-        pages: number;
-      } | null;
       version_number: number;
       time_limit_ms: number;
       memory_limit_kb: number;
@@ -1758,11 +1118,6 @@ export interface components {
       /** Format: date-time */
       published_at: string | null;
     };
-    /**
-     * @description What solvers read as the statement, a Markdown text or an uploaded PDF.
-     * @enum {string}
-     */
-    StatementMode: 'markdown' | 'pdf';
     ProblemVersion: {
       /** Format: uuid */
       id: string;
@@ -1771,13 +1126,6 @@ export interface components {
       status: 'draft' | 'published';
       title: string;
       statement: string;
-      statement_mode: components['schemas']['StatementMode'];
-      /** @description The uploaded PDF. Kept on the draft even while the mode is `markdown`. */
-      statement_pdf: {
-        size_bytes: number;
-        pages: number;
-        sha256: string;
-      } | null;
       time_limit_ms: number;
       memory_limit_kb: number;
       allowed_languages: components['schemas']['Language'][];
@@ -1790,12 +1138,9 @@ export interface components {
     };
     PublishCheck: {
       /** @enum {string} */
-      key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'outputs' | 'solution';
+      key: 'statement' | 'languages' | 'sample_test' | 'tests' | 'solution';
       ok: boolean;
-      /**
-       * @description What is needed (when not ok) or what is in place (when ok). `outputs` is not ok while a
-       *     testcase has no expected output: upload one or generate it from a solution
-       */
+      /** @description What is needed (when not ok) or what is in place (when ok) */
       message: string;
     };
     ProblemEditor: {
@@ -1833,16 +1178,13 @@ export interface components {
     TestSummary: {
       count: number;
       sample_count: number;
-      /** @description Testcases still waiting for an expected output */
-      missing_output_count: number;
       total_bytes: number;
     };
     /**
      * @description Input and expected output are stored as UTF-8 text, normalised on upload: a leading byte order mark is
      *     removed, CRLF and lone CR become LF, trailing blank lines are removed and a non-empty file ends with
      *     exactly one LF. Binary files (NUL or other control characters, invalid UTF-8) are refused.
-     *     The SHA-256 and sizes are of the normalised content. A testcase created on the testcases page
-     *     can have no expected output yet (`output_sha256` and `output_size_bytes` null).
+     *     The SHA-256 and sizes are of the normalised content.
      */
     TestCase: {
       /** Format: uuid */
@@ -1851,10 +1193,9 @@ export interface components {
       position: number;
       is_sample: boolean;
       input_sha256: string;
-      /** @description Null while the expected output is still to be uploaded or generated */
-      output_sha256: string | null;
+      output_sha256: string;
       input_size_bytes: number;
-      output_size_bytes: number | null;
+      output_size_bytes: number;
       /** Format: date-time */
       created_at: string;
     };
@@ -1863,11 +1204,6 @@ export interface components {
       summary: components['schemas']['TestSummary'];
       limits: components['schemas']['TestLimits'];
       editable: boolean;
-      /**
-       * @description Changes whenever the order, files or visibility of the testcases do. Send it with
-       *     `saveTestCases`; if the testcases changed meanwhile the save is 409 `TESTS_CHANGED`
-       */
-      revision: string;
     };
     ReferenceSolution: {
       /** Format: uuid */
@@ -1897,8 +1233,6 @@ export interface components {
       language: components['schemas']['Language'];
       /** @description UTF-8, at most 65536 bytes */
       source: string;
-      /** @description Slug of the Track the solver is working in; the first Track that reaches the problem when left out */
-      track?: string;
     };
     SubmissionSummary: {
       /** Format: uuid */
@@ -1954,290 +1288,6 @@ export interface components {
       /** @description The verdict is ISE and the caller may ask for another check */
       can_rejudge: boolean;
     };
-    TrackRef: {
-      name: string;
-      slug: string;
-    };
-    SpaceSubmissionRow: {
-      /** Format: uuid */
-      id: string;
-      /** Format: date-time */
-      created_at: string;
-      member: components['schemas']['PublicUser'];
-      problem: {
-        slug: string;
-        /** @description Title of the version that was judged */
-        title: string;
-      };
-      /** @description The Track the submission was made from; null when none reached the problem */
-      track: components['schemas']['TrackRef'] | null;
-      /** @description Number of the problem version that was judged */
-      version: number;
-      language: components['schemas']['Language'];
-      status: components['schemas']['SubmissionStatus'];
-      verdict: components['schemas']['Verdict'] | null;
-      tests_passed: number | null;
-      tests_total: number | null;
-      time_ms: number | null;
-      memory_kb: number | null;
-    };
-    SpaceSubmissionPage: {
-      items: components['schemas']['SpaceSubmissionRow'][];
-      page: number;
-      page_size: number;
-      total: number;
-    };
-    SubmissionProblemRef: {
-      slug: string;
-      title: string;
-      status: components['schemas']['ProblemStatus'];
-    };
-    MemberRollup: {
-      user: components['schemas']['PublicUser'];
-      /** @description Null for someone who submitted without being a member */
-      role: components['schemas']['Role'] | null;
-      /** @description Problems tried */
-      attempted: number;
-      solved: number;
-      submissions: number;
-      /** @description Accepted submissions out of all of them, 0 to 1; null when there are none */
-      ac_rate: number | null;
-      last_verdict: components['schemas']['Verdict'] | null;
-      /** Format: date-time */
-      last_submission_at: string | null;
-    };
-    MemberRollupPage: {
-      items: components['schemas']['MemberRollup'][];
-      page: number;
-      page_size: number;
-      total: number;
-      /** @description Over every row that matches the filters, not only this page */
-      totals: {
-        members: number;
-        submissions: number;
-      };
-    };
-    MemberProblem: {
-      problem: components['schemas']['SubmissionProblemRef'];
-      /** @description The Track of the person's latest submission of the problem */
-      track: components['schemas']['TrackRef'] | null;
-      attempts: number;
-      solved: boolean;
-      best_verdict: components['schemas']['Verdict'] | null;
-      last_verdict: components['schemas']['Verdict'] | null;
-      /** Format: date-time */
-      last_submission_at: string | null;
-    };
-    MemberProblemPage: {
-      items: components['schemas']['MemberProblem'][];
-      page: number;
-      page_size: number;
-      total: number;
-      member: components['schemas']['MemberRollup'];
-    };
-    TrackRollup: {
-      track: {
-        name: string;
-        slug: string;
-        privacy: components['schemas']['TrackPrivacy'];
-        is_default: boolean;
-      };
-      /** @description Published problems in the Track */
-      problems: number;
-      /** @description Size of the Track's audience */
-      members: number;
-      submissions: number;
-      accepted: number;
-      /** @description People of the audience who solved every published problem of the Track */
-      members_finished: number;
-      /** Format: date-time */
-      last_submission_at: string | null;
-    };
-    FailureMode: {
-      verdict: components['schemas']['Verdict'];
-      /** @description The first test that failed (1-based); null for a compilation error */
-      test_position: number | null;
-      count: number;
-    };
-    TrackProblemRollup: {
-      problem: components['schemas']['SubmissionProblemRef'];
-      /** @description The Collections of the Track that hold the problem */
-      collections: components['schemas']['TrackRef'][];
-      /** @description People who submitted */
-      tried: number;
-      /** @description People who solved it */
-      solved: number;
-      submissions: number;
-      most_common_failure: components['schemas']['FailureMode'] | null;
-      /** Format: date-time */
-      last_submission_at: string | null;
-    };
-    TrackSubmissionProblems: {
-      track: {
-        name: string;
-        slug: string;
-        privacy: components['schemas']['TrackPrivacy'];
-        collections: number;
-        problems: number;
-        members: number;
-        submissions: number;
-        accepted: number;
-        /** @description People of the audience who solved every published problem */
-        finished: number;
-      };
-      /** @description Active Collections of the Track, for the collection filter */
-      collections: components['schemas']['TrackRef'][];
-      items: components['schemas']['TrackProblemRollup'][];
-    };
-    ProblemRollup: {
-      problem: components['schemas']['SubmissionProblemRef'];
-      /** @description Active Tracks that reach the problem, in Track order */
-      tracks: components['schemas']['TrackRef'][];
-      tried: number;
-      solved: number;
-      submissions: number;
-      last_verdict: components['schemas']['Verdict'] | null;
-      /** Format: date-time */
-      last_submission_at: string | null;
-    };
-    ProblemRollupPage: {
-      items: components['schemas']['ProblemRollup'][];
-      page: number;
-      page_size: number;
-      total: number;
-    };
-    /** @description A window of lines of a text, with the totals needed to say "showing 10 of 4,203 lines". */
-    TextSlice: {
-      /** @description The lines of the window without their line breaks (CR before LF dropped) */
-      lines: string[];
-      /** @description 1-based number of the first line in `lines`; `total_lines + 1` when past the end */
-      from_line: number;
-      /** @description 1-based number of the last line in `lines`; `from_line - 1` when the window is empty */
-      to_line: number;
-      /** @description Lines in the whole text; a last line without a line break counts */
-      total_lines: number;
-      size_bytes: number;
-      /** @description A line of the window was longer than 10000 characters and was cut */
-      line_truncated: boolean;
-    };
-    SubmissionFilePart: components['schemas']['TextSlice'] & {
-      /** @description What was kept of the program's output is shorter than what it printed */
-      cut: boolean;
-      /** @description The file could not be read (never stored, or removed); `lines` is empty */
-      unavailable?: boolean;
-    };
-    SubmissionTestDetail: {
-      /** Format: uuid */
-      submission_id: string;
-      position: number;
-      verdict: components['schemas']['TestVerdict'];
-      is_sample: boolean;
-      time_ms: number;
-      memory_kb: number;
-      exit_code: number | null;
-      signal: number | null;
-      /** @description Null when `part` asked for another part */
-      input: components['schemas']['SubmissionFilePart'] | null;
-      /** @description Null when `part` asked for another part. A test without an expected output is `unavailable` */
-      expected: components['schemas']['SubmissionFilePart'] | null;
-      /** @description What the program printed; null when `part` asked for another part or Judge sent none */
-      output: components['schemas']['SubmissionFilePart'] | null;
-      /** @description Null when `part` asked for another part or Judge sent none */
-      stderr: components['schemas']['SubmissionFilePart'] | null;
-    };
-    StagedFile: {
-      /** @description Of the normalised content; what `saveTestCases` refers to */
-      sha256: string;
-      size_bytes: number;
-      total_lines: number;
-    };
-    StageTextRequest: {
-      /** @description At most 1 MiB and no NUL character */
-      text: string;
-    };
-    TestFileRef: {
-      sha256: string;
-    };
-    SaveTestCaseItem: {
-      /**
-       * Format: uuid
-       * @description An existing testcase of this problem; left out for a new one
-       */
-      id?: string;
-      is_sample: boolean;
-      input?: components['schemas']['TestFileRef'];
-      output?: components['schemas']['TestFileRef'];
-    };
-    SaveTestCasesRequest: {
-      /** @description The `revision` of the list the changes started from */
-      revision?: string;
-      /** @description The testcases the problem should have afterwards, in order; those not listed are removed */
-      tests: components['schemas']['SaveTestCaseItem'][];
-    };
-    TestFileSlice: components['schemas']['TextSlice'] & {
-      /** @description Position of the testcase */
-      position: number;
-      /** @enum {string} */
-      side: 'input' | 'output';
-    };
-    StartGenerateRequest: {
-      /**
-       * Format: uuid
-       * @description A reference solution of this problem
-       */
-      solution_id: string;
-      /** @description Testcases to run, each once; the others keep what they have. All of them when left out */
-      test_ids?: string[];
-    };
-    GenerateRun: {
-      /** Format: uuid */
-      test_id: string;
-      position: number;
-      /** @enum {string} */
-      status: 'queued' | 'running' | 'done' | 'failed';
-      /** @description Why a run failed, one of TLE, MLE, RE, OLE, ISE */
-      verdict: string | null;
-      /** @description e.g. `COMPILE_ERROR`, `NO_OUTPUT` or `JUDGE_UNAVAILABLE` */
-      error_code: string | null;
-      time_ms: number | null;
-      memory_kb: number | null;
-      /** @description The start of the standard error (at most 1000 characters) */
-      stderr: string | null;
-      /** @description The generated expected output, ready to be put in `saveTestCases` */
-      output: {
-        sha256: string;
-        size_bytes: number;
-      } | null;
-      /**
-       * @description The output equals the testcase's current expected output as Judge compares (trailing
-       *     spaces and trailing blank lines do not count); null when there is nothing to compare
-       */
-      same_as_current: boolean | null;
-    };
-    GenerateJob: {
-      /** Format: uuid */
-      id: string;
-      /** @enum {string} */
-      status: 'running' | 'completed' | 'stopped' | 'timed_out' | 'failed';
-      /** @description Set when the job failed as a whole, e.g. `COMPILE_ERROR` when the solution does not compile */
-      error: {
-        code: string;
-        message: string;
-      } | null;
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      deadline_at: string;
-      /** Format: date-time */
-      finished_at: string | null;
-      progress: {
-        total: number;
-        done: number;
-        failed: number;
-      };
-      /** @description In testcase order */
-      runs: components['schemas']['GenerateRun'][];
-    };
     HealthResponse: {
       /** @enum {string} */
       status: 'ok';
@@ -2262,158 +1312,6 @@ export interface components {
       field: string;
       message: string;
     };
-    /**
-     * @description `space`: everyone who can see the Space can see the Track. `members`: only people added to the Track (staff always see every Track).
-     * @enum {string}
-     */
-    TrackPrivacy: 'space' | 'members';
-    /** @description Problems solved (at least one accepted submission, any version) out of the published problems in the non-archived Collections of the Track. A problem counts once. */
-    Progress: {
-      solved: number;
-      total: number;
-    };
-    Track: {
-      /** Format: uuid */
-      id: string;
-      name: string;
-      /** @description 2-64 chars, lower-case letters, digits, `-` or `_`; unique in the Space, also when archived */
-      slug: string;
-      description: string;
-      privacy: components['schemas']['TrackPrivacy'];
-      position: number;
-      archived: boolean;
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      updated_at: string;
-    };
-    TrackSummary: components['schemas']['Track'] & {
-      collection_count: number;
-      /** @description Published problems that count towards progression */
-      problem_count: number;
-      /** @description The caller's own progression; null for a visitor */
-      progress: components['schemas']['Progress'] | null;
-      /** @description Added to this Track by an invitation */
-      is_member: boolean;
-    };
-    CreateTrackRequest: {
-      name: string;
-      /** @description Derived from the name when left out (the name must then contain latin letters or digits) */
-      slug?: string;
-      description?: string;
-      privacy?: components['schemas']['TrackPrivacy'];
-    };
-    UpdateTrackRequest: {
-      name?: string;
-      description?: string;
-      privacy?: components['schemas']['TrackPrivacy'];
-      archived?: boolean;
-    };
-    ReorderTracksRequest: {
-      track_slugs: string[];
-    };
-    SetTrackCollectionsRequest: {
-      /** @description Exactly the Collections the Track should have, in order */
-      collection_slugs: string[];
-    };
-    ProblemRef: {
-      slug: string;
-      title: string;
-      /**
-       * @description Solvers only ever see `published`
-       * @enum {string}
-       */
-      status: 'draft' | 'published' | 'archived';
-      /** @description The caller's own result; null for a visitor */
-      my_result: {
-        solved: boolean;
-        /** @description Verdict of the latest finished submission, null when there is none */
-        last_verdict: string | null;
-      } | null;
-    };
-    Collection: {
-      /** Format: uuid */
-      id: string;
-      name: string;
-      slug: string;
-      description: string;
-      archived: boolean;
-      /** Format: date-time */
-      created_at: string;
-      /** Format: date-time */
-      updated_at: string;
-    };
-    CollectionSummary: components['schemas']['Collection'] & {
-      /** @description Published problems for solvers, all problems for staff */
-      problem_count: number;
-      /** @description The Tracks (that the caller can reach) this Collection is in */
-      tracks: {
-        name: string;
-        slug: string;
-      }[];
-    };
-    CollectionDetail: components['schemas']['CollectionSummary'] & {
-      space: {
-        name: string;
-        slug: string;
-      };
-      problems: components['schemas']['ProblemRef'][];
-      progress: components['schemas']['Progress'] | null;
-    };
-    CollectionInTrack: components['schemas']['Collection'] & {
-      problems: components['schemas']['ProblemRef'][];
-      progress: components['schemas']['Progress'] | null;
-    };
-    TrackDetail: components['schemas']['Track'] & {
-      space: {
-        name: string;
-        slug: string;
-      };
-      collections: components['schemas']['CollectionInTrack'][];
-      progress: components['schemas']['Progress'] | null;
-      /** @description Only for people who manage the Track */
-      member_count: number | null;
-    };
-    CreateCollectionRequest: {
-      name: string;
-      slug?: string;
-      description?: string;
-    };
-    UpdateCollectionRequest: {
-      name?: string;
-      description?: string;
-      archived?: boolean;
-    };
-    SetCollectionProblemsRequest: {
-      /** @description Exactly the problems the Collection should have, in order */
-      problem_slugs: string[];
-    };
-    ChangeCollectionProblemsRequest: {
-      add?: string[];
-      remove?: string[];
-    };
-    TrackMember: components['schemas']['PublicUser'] & {
-      /** @description Their role in the Space; a person invited to a Track is a solver */
-      space_role: string | null;
-      /** Format: date-time */
-      joined_at: string;
-      added_by: components['schemas']['PublicUser'];
-    };
-    TrackProgress: {
-      total: number;
-      items: {
-        user: components['schemas']['PublicUser'];
-        role: string | null;
-        is_track_member: boolean;
-        solved: number;
-      }[];
-    };
-    CreateTrackInviteRequest: {
-      /** @description Address the invitation to one user. Omit for a link invitation. */
-      username?: string;
-      /** @default 7 */
-      expires_in_days: number;
-    };
   };
   responses: {
     /** @description Standard error response */
@@ -2433,12 +1331,6 @@ export interface components {
     Username: string;
     InviteId: string;
     InviteToken: string;
-    /** @description Track slug, unique inside its Space */
-    TrackSlug: string;
-    /** @description Collection slug, unique inside its Space */
-    CollectionSlug: string;
-    /** @description Staff only; others never see archived items */
-    IncludeArchived: boolean;
     Page: number;
     PageSize: number;
     /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
@@ -2448,13 +1340,6 @@ export interface components {
     TestId: string;
     SolutionId: string;
     SubmissionId: string;
-    JobId: string;
-    /** @description 1-based number of the first line of the window */
-    FromLine: number;
-    /** @description Lines in the window */
-    MaxLines: number;
-    /** @description Count only submissions of the last 7 or 30 days */
-    SubmissionWindow: 'any' | '7d' | '30d';
   };
   requestBodies: never;
   headers: never;
@@ -3178,608 +2063,6 @@ export interface operations {
       410: components['responses']['Error'];
     };
   };
-  listTracks: {
-    parameters: {
-      query?: {
-        /** @description Staff only; others never see archived items */
-        include_archived?: components['parameters']['IncludeArchived'];
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The Tracks, with the caller's progression */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['TrackSummary'][];
-          };
-        };
-      };
-      404: components['responses']['Error'];
-    };
-  };
-  createTrack: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateTrackRequest'];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Track'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  reorderTracks: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ReorderTracksRequest'];
-      };
-    };
-    responses: {
-      /** @description The Tracks in the new order */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['Track'][];
-          };
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  getTrack: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The Track */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TrackDetail'];
-        };
-      };
-      404: components['responses']['Error'];
-    };
-  };
-  archiveTrack: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Archived. Problems and Collections are kept. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  updateTrack: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateTrackRequest'];
-      };
-    };
-    responses: {
-      /** @description Updated */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Track'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  setTrackCollections: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SetTrackCollectionsRequest'];
-      };
-    };
-    responses: {
-      /** @description The Track */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TrackDetail'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  getTrackProgress: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Progression */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TrackProgress'];
-        };
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listTrackMembers: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The members */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['TrackMember'][];
-          };
-        };
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  removeTrackMember: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-        username: components['parameters']['Username'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Removed */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listTrackInvites: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The invitations */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['Invite'][];
-          };
-        };
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  createTrackInvite: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateTrackInviteRequest'];
-      };
-    };
-    responses: {
-      /** @description Created. The token is shown once. */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Invite'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  revokeTrackInvite: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-        inviteId: components['parameters']['InviteId'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Revoked */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  listCollections: {
-    parameters: {
-      query?: {
-        /** @description Staff only; others never see archived items */
-        include_archived?: components['parameters']['IncludeArchived'];
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The Collections */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['CollectionSummary'][];
-          };
-        };
-      };
-      404: components['responses']['Error'];
-    };
-  };
-  createCollection: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateCollectionRequest'];
-      };
-    };
-    responses: {
-      /** @description Created */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Collection'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  getCollection: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Collection slug, unique inside its Space */
-        collectionSlug: components['parameters']['CollectionSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The Collection */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['CollectionDetail'];
-        };
-      };
-      404: components['responses']['Error'];
-    };
-  };
-  archiveCollection: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Collection slug, unique inside its Space */
-        collectionSlug: components['parameters']['CollectionSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Archived. Problems are kept. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  updateCollection: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Collection slug, unique inside its Space */
-        collectionSlug: components['parameters']['CollectionSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateCollectionRequest'];
-      };
-    };
-    responses: {
-      /** @description Updated */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Collection'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  setCollectionProblems: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Collection slug, unique inside its Space */
-        collectionSlug: components['parameters']['CollectionSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SetCollectionProblemsRequest'];
-      };
-    };
-    responses: {
-      /** @description The Collection */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['CollectionDetail'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  changeCollectionProblems: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Collection slug, unique inside its Space */
-        collectionSlug: components['parameters']['CollectionSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ChangeCollectionProblemsRequest'];
-      };
-    };
-    responses: {
-      /** @description The Collection */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['CollectionDetail'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
   listProblems: {
     parameters: {
       query?: {
@@ -4056,102 +2339,6 @@ export interface operations {
       409: components['responses']['Error'];
     };
   };
-  uploadStatementPdf: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'multipart/form-data': {
-          /** Format: binary */
-          file: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Stored; the editor view of the draft */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ProblemEditor'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  removeStatementPdf: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Removed; the editor view of the draft */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ProblemEditor'];
-        };
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  getStatementPdf: {
-    parameters: {
-      query?: {
-        draft?: boolean;
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The PDF */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/pdf': string;
-        };
-      };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
   getAsset: {
     parameters: {
       query?: never;
@@ -4205,40 +2392,6 @@ export interface operations {
       404: components['responses']['Error'];
     };
   };
-  saveTestCases: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SaveTestCasesRequest'];
-      };
-    };
-    responses: {
-      /** @description The saved testcases, with the new revision */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TestCaseList'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
   createTestCase: {
     parameters: {
       query?: never;
@@ -4278,46 +2431,6 @@ export interface operations {
       403: components['responses']['Error'];
       404: components['responses']['Error'];
       409: components['responses']['Error'];
-    };
-  };
-  stageTestFile: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'multipart/form-data': {
-          /** Format: binary */
-          file: string;
-        };
-        'application/json': components['schemas']['StageTextRequest'];
-      };
-    };
-    responses: {
-      /** @description Stored */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['StagedFile'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-      413: components['responses']['Error'];
-      429: components['responses']['Error'];
     };
   };
   reorderTestCases: {
@@ -4463,9 +2576,7 @@ export interface operations {
   };
   downloadTestInput: {
     parameters: {
-      query?: {
-        inline?: 'true' | 'false';
-      };
+      query?: never;
       header?: never;
       path: {
         /** @description Space slug (case-insensitive) */
@@ -4494,9 +2605,7 @@ export interface operations {
   };
   downloadTestOutput: {
     parameters: {
-      query?: {
-        inline?: 'true' | 'false';
-      };
+      query?: never;
       header?: never;
       path: {
         /** @description Space slug (case-insensitive) */
@@ -4518,137 +2627,6 @@ export interface operations {
           'text/plain': string;
         };
       };
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  getTestFileSlice: {
-    parameters: {
-      query?: {
-        /** @description 1-based number of the first line of the window */
-        from_line?: components['parameters']['FromLine'];
-        /** @description Lines in the window */
-        max_lines?: components['parameters']['MaxLines'];
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-        testId: components['parameters']['TestId'];
-        side: 'input' | 'output';
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The window */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TestFileSlice'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      503: components['responses']['Error'];
-    };
-  };
-  startGenerate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['StartGenerateRequest'];
-      };
-    };
-    responses: {
-      /** @description Started */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['GenerateJob'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-      409: components['responses']['Error'];
-    };
-  };
-  getGenerate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-        jobId: components['parameters']['JobId'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The job */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['GenerateJob'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  stopGenerate: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Problem slug (case-insensitive), unique inside its Space */
-        problemSlug: components['parameters']['ProblemSlug'];
-        jobId: components['parameters']['JobId'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The job as it is now */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['GenerateJob'];
-        };
-      };
-      400: components['responses']['Error'];
       401: components['responses']['Error'];
       403: components['responses']['Error'];
       404: components['responses']['Error'];
@@ -4849,265 +2827,6 @@ export interface operations {
       429: components['responses']['Error'];
     };
   };
-  listSpaceSubmissions: {
-    parameters: {
-      query?: {
-        page?: components['parameters']['Page'];
-        page_size?: components['parameters']['PageSize'];
-        /** @description Username of the author */
-        member?: string;
-        q?: string;
-        /** @description Problem slug */
-        problem?: string;
-        /** @description Track slug, or `none` */
-        track?: string;
-        /** @description Comma-separated verdict codes, e.g. `AC,WA` */
-        verdict?: string;
-        language?: components['schemas']['Language'];
-        /** @description Problem version number */
-        version?: number;
-        from?: string;
-        to?: string;
-        sort?: 'newest' | 'oldest' | 'member' | 'tests_passed' | 'time';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description A page of submissions */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SpaceSubmissionPage'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listSubmissionVersions: {
-    parameters: {
-      query?: {
-        /** @description Problem slug */
-        problem?: string;
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Version numbers, newest first */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: number[];
-          };
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listSubmissionsByMember: {
-    parameters: {
-      query?: {
-        page?: components['parameters']['Page'];
-        page_size?: components['parameters']['PageSize'];
-        /** @description Search in the username and display name */
-        q?: string;
-        role?: 'owner' | 'administrator' | 'editor' | 'observer' | 'solver' | 'none';
-        track?: string;
-        /** @description Count only submissions of the last 7 or 30 days */
-        window?: components['parameters']['SubmissionWindow'];
-        sort?: 'last_submission' | 'solved' | 'name';
-        hide_empty?: 'true' | 'false';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description A page of member rollups */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['MemberRollupPage'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listMemberProblems: {
-    parameters: {
-      query?: {
-        page?: components['parameters']['Page'];
-        page_size?: components['parameters']['PageSize'];
-        /** @description Search in the problem slug and title */
-        q?: string;
-        /** @description Track slug, or `none` */
-        track?: string;
-        status?: 'all' | 'solved' | 'unsolved';
-        sort?: 'last_submission' | 'attempts' | 'name';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        username: components['parameters']['Username'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description A page of problems with the person's results */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['MemberProblemPage'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listSubmissionsByTrack: {
-    parameters: {
-      query?: {
-        /** @description Search in the Track name and slug */
-        q?: string;
-        privacy?: components['schemas']['TrackPrivacy'];
-        /** @description Count only submissions of the last 7 or 30 days */
-        window?: components['parameters']['SubmissionWindow'];
-        sort?: 'track_order' | 'last_submission' | 'submissions';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Tracks with their numbers */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            items: components['schemas']['TrackRollup'][];
-          };
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listTrackSubmissionProblems: {
-    parameters: {
-      query?: {
-        /** @description Search in the problem slug and title */
-        q?: string;
-        /** @description Collection slug */
-        collection?: string;
-        status?: 'all' | 'published' | 'draft' | 'archived';
-        sort?: 'track_order' | 'solved_fewest' | 'last_submission';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-        /** @description Track slug, unique inside its Space */
-        trackSlug: components['parameters']['TrackSlug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The Track and its problems */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TrackSubmissionProblems'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
-  listSubmissionsByProblem: {
-    parameters: {
-      query?: {
-        page?: components['parameters']['Page'];
-        page_size?: components['parameters']['PageSize'];
-        /** @description Search in the problem slug and title */
-        q?: string;
-        track?: string;
-        status?: 'all' | 'published' | 'draft' | 'archived';
-        sort?: 'last_submission' | 'submissions' | 'solved_fewest' | 'name';
-      };
-      header?: never;
-      path: {
-        /** @description Space slug (case-insensitive) */
-        slug: components['parameters']['Slug'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description A page of problem rollups */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ProblemRollupPage'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      403: components['responses']['Error'];
-      404: components['responses']['Error'];
-    };
-  };
   getSubmission: {
     parameters: {
       query?: never;
@@ -5130,40 +2849,6 @@ export interface operations {
       };
       401: components['responses']['Error'];
       404: components['responses']['Error'];
-    };
-  };
-  getSubmissionTest: {
-    parameters: {
-      query?: {
-        part?: 'input' | 'expected' | 'output' | 'stderr';
-        /** @description 1-based number of the first line of the window */
-        from_line?: components['parameters']['FromLine'];
-        /** @description Lines in the window */
-        max_lines?: components['parameters']['MaxLines'];
-      };
-      header?: never;
-      path: {
-        submissionId: components['parameters']['SubmissionId'];
-        /** @description 1-based position of the test in the judging order */
-        position: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The test with its windows of text */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SubmissionTestDetail'];
-        };
-      };
-      400: components['responses']['Error'];
-      401: components['responses']['Error'];
-      404: components['responses']['Error'];
-      503: components['responses']['Error'];
     };
   };
   streamSubmission: {

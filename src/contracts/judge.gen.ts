@@ -117,14 +117,9 @@ export interface components {
     /**
      * @description `submission` stops at the first test that is not AC (remaining tests
      *     are SKIPPED). `verify` runs every test (used by the publish gate).
-     *     `generate` runs every test input through the program and reports what it
-     *     printed (it needs `capture.stdout_bytes`); the expected output is not
-     *     compared, so `tests[].output` may be left out. A test whose output is
-     *     larger than `capture.stdout_bytes` is reported as OLE (the output would be
-     *     incomplete). Used to create expected outputs from a reference solution.
      * @enum {string}
      */
-    JobKind: 'submission' | 'verify' | 'generate';
+    JobKind: 'submission' | 'verify';
     /**
      * @description Output checker. `line` ignores trailing whitespace on each line and trailing blank lines.
      * @enum {string}
@@ -160,38 +155,14 @@ export interface components {
       /** Format: int64 */
       size_bytes: number;
     };
-    /**
-     * @description Ask Judge to send back what the program printed, for every test that ran
-     *     (hidden tests too: Core decides who may see it). Judge keeps to
-     *     `total_bytes` for the whole job; tests after the budget is used come
-     *     back without `stdout`/`stderr`. Text is valid UTF-8 (invalid bytes become U+FFFD).
-     */
-    Capture: {
-      /**
-       * @description Keep at most this many bytes of standard output per test. 0 keeps none.
-       * @default 0
-       */
-      stdout_bytes: number;
-      /**
-       * @description Keep at most this many bytes of standard error per test. 0 keeps none.
-       * @default 0
-       */
-      stderr_bytes: number;
-      /**
-       * @description Budget for all captured text of the job.
-       * @default 2097152
-       */
-      total_bytes: number;
-    };
     TestCase: {
       id: string;
       input: components['schemas']['TestFile'];
-      /** @description The expected output. Required for `submission` and `verify`; ignored for `generate`. */
-      output?: components['schemas']['TestFile'];
+      output: components['schemas']['TestFile'];
       /**
        * @description Sample tests are visible to solvers. Only for sample tests does the
-       *     result carry `stdout_preview` and `checker_message`, unless the job
-       *     asks for `capture`; hidden test content otherwise never leaves Judge.
+       *     result carry `stdout_preview` and `checker_message`; hidden test
+       *     content never leaves Judge.
        * @default false
        */
       sample: boolean;
@@ -208,7 +179,6 @@ export interface components {
       source: string;
       limits: components['schemas']['Limits'];
       checker?: components['schemas']['Checker'];
-      capture?: components['schemas']['Capture'];
       /** @description Run in the given order. IDs must be unique. */
       tests: components['schemas']['TestCase'][];
       /**
@@ -255,24 +225,6 @@ export interface components {
       stdout_preview?: string;
       /** @description Where the output first differs. Sample tests only. */
       checker_message?: string;
-      /**
-       * @description Start of the program output, at most `capture.stdout_bytes`. Only when the job
-       *     asked for `capture`, for every test that ran. For `generate` jobs this is the
-       *     complete output of a test that finished normally.
-       */
-      stdout?: string;
-      /**
-       * Format: int64
-       * @description Full size of the program output, so Core can tell it was cut. With `stdout`.
-       */
-      stdout_size_bytes?: number;
-      /** @description Start of standard error, at most `capture.stderr_bytes`, host paths removed. */
-      stderr?: string;
-      /**
-       * Format: int64
-       * @description Full size of standard error. With `stderr`.
-       */
-      stderr_size_bytes?: number;
     };
     ResultSummary: {
       passed: number;

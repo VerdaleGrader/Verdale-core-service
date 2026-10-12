@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client';
-import { CAPTURE, DISPATCH_GIVE_UP_MS, OUTPUT_LIMIT_KB } from '@/constants/limits';
+import { DISPATCH_GIVE_UP_MS, OUTPUT_LIMIT_KB } from '@/constants/limits';
 import { JobRequest, JudgeClient, JudgeRejectedError, JudgeUnavailableError } from '@/libs/judge';
 import TLogger, { Layer } from '@/logging/logger';
 import ProblemRepository from '@/repositories/problem.repository';
@@ -74,8 +74,7 @@ export default class JudgeDispatcher {
       this.problems.findVersion(this.prisma, submission.problem_version_id),
       this.tests.listByVersion(this.prisma, submission.problem_version_id),
     ]);
-    // A published version has an output for every test (the database insists); never send half a job.
-    if (!version || tests.length === 0 || tests.some((test) => !test.output_sha256)) {
+    if (!version || tests.length === 0) {
       await this.giveUp(submissionId, 'JOB_INVALID');
       logger.error({ message: 'submission has no version or no tests', data: { submissionId } });
       return;
@@ -94,11 +93,10 @@ export default class JudgeDispatcher {
         output_kb: OUTPUT_LIMIT_KB,
       },
       checker: 'line',
-      capture: { ...CAPTURE },
       tests: tests.map((test) => ({
         id: test.id,
         input: { sha256: test.input_sha256, size_bytes: test.input_size_bytes },
-        output: { sha256: test.output_sha256!, size_bytes: test.output_size_bytes! },
+        output: { sha256: test.output_sha256, size_bytes: test.output_size_bytes },
         sample: test.is_sample,
       })),
       callback_url: this.options.callbackUrl,
@@ -190,18 +188,7 @@ export default class JudgeDispatcher {
         this.logger.error({ message: 'dispatch loop failed', error: error as Error });
       }
     };
-    // Ticks are tracked like other dispatches, so stop() waits for one that is running.
-    // A tick that is still running is not overlapped: two would pick the same due rows.
-    let ticking = false;
-    this.timer = setInterval(() => {
-      if (ticking) return;
-      ticking = true;
-      const run = tick().finally(() => {
-        ticking = false;
-        this.inflight.delete(run);
-      });
-      this.inflight.add(run);
-    }, intervalMs);
+    this.timer = setInterval(() => void tick(), intervalMs);
     this.timer.unref();
   }
 

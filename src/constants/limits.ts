@@ -34,10 +34,6 @@ export const SOLUTIONS_MAX_COUNT = 5;
 /** Output a program may write per test, in KB. Judge's own default and maximum. */
 export const OUTPUT_LIMIT_KB = 65_536;
 
-/** A PDF statement (GRD-73). */
-export const PDF_MAX_BYTES = 10 * MIB;
-export const PDF_MAX_PAGES = 10;
-
 export const IMAGE_MAX_BYTES = 2 * MIB;
 export const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
@@ -45,17 +41,6 @@ export const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as 
 export const SUBMISSIONS_PER_MINUTE = 10;
 /** Re-checks (ISE) share the budget above; this is only for the route config. */
 export const SUBMISSION_LIST_MAX_PAGE_SIZE = 50;
-
-/**
- * What Core asks Judge to send back of each test's output (GRD-93). Staff read
- * it to see why a submission failed; the whole job stays under `total_bytes`
- * and is below the size Core accepts in a callback.
- */
-export const CAPTURE = {
-  stdout_bytes: 64 * 1024,
-  stderr_bytes: 8 * 1024,
-  total_bytes: 2 * MIB,
-} as const;
 
 /** How long a queued submission waits for Judge to come back before it is an ISE. */
 export const DISPATCH_GIVE_UP_MS = 30 * 60 * 1000;
