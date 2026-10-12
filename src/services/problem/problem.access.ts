@@ -15,7 +15,7 @@ export type AuthorAction =
  * Checks that the caller may do an author action in this Space, before the
  * problem is even looked up, so a visitor cannot tell a draft from a missing
  * problem by the status code. A Space the caller cannot see is 404; an
- * archived Space is read-only; a viewer who is not an owner or editor is 403.
+ * archived Space is read-only; someone without the role for it is 403.
  */
 export function assertAuthor(user: User | null, action: AuthorAction, access: SpaceAccess): User {
   const actor = actorOf(user);
@@ -26,7 +26,7 @@ export function assertAuthor(user: User | null, action: AuthorAction, access: Sp
     throw new ForbiddenError('This Space is archived, so its problems are read-only.');
   }
   if (!can(actor, action as Action, resource)) {
-    throw new ForbiddenError('Only owners and editors can do this.');
+    throw new ForbiddenError('You do not have permission to do this in this Space.');
   }
   return user;
 }

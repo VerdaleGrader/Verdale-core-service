@@ -24,7 +24,10 @@ export default class UserRepository {
       .then((account) => account?.user ?? null);
   }
 
-  create(db: Db, data: { email: string; username: string; display_name: string }) {
+  create(
+    db: Db,
+    data: { email: string; username: string; display_name: string; avatar_url?: string | null }
+  ) {
     return db.user.create({ data });
   }
 
@@ -34,7 +37,11 @@ export default class UserRepository {
     });
   }
 
-  update(db: Db, id: string, data: { display_name?: string; username?: string }) {
+  update(
+    db: Db,
+    id: string,
+    data: { display_name?: string; username?: string; avatar_url?: string | null }
+  ) {
     return db.user.update({ where: { id }, data });
   }
 }

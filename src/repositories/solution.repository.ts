@@ -1,7 +1,8 @@
 import { Language } from '../../generated/prisma/enums';
 import { Db } from '@/repositories/db';
+import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
-const WITH_AUTHOR = { created_by: { select: { username: true, display_name: true } } } as const;
+const WITH_AUTHOR = { created_by: { select: PUBLIC_USER_SELECT } } as const;
 
 export default class SolutionRepository {
   list(db: Db, versionId: string) {

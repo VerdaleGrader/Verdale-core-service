@@ -17,18 +17,27 @@ model User {
   email        String   @unique @db.VarChar(254)
   username     String   @unique @db.VarChar(32)
   display_name String   @db.VarChar(64)
+  // Profile picture from the sign-in provider (https URL); null shows initials.
+  avatar_url   String?  @db.VarChar(512)
   created_at   DateTime @default(now()) @db.Timestamptz(3)
   updated_at   DateTime @updatedAt @db.Timestamptz(3)
 
-  oauth_accounts   OAuthAccount[]
-  sessions         Session[]
-  memberships      Membership[]
-  spaces_created   Space[]
-  invites_sent     Invite[]            @relation("InviteCreator")
-  invites_received Invite[]            @relation("InviteInvitee")
-  problems_created Problem[]
-  solutions_added  ReferenceSolution[]
-  submissions      Submission[]
+  oauth_accounts        OAuthAccount[]
+  sessions              Session[]
+  memberships           Membership[]
+  spaces_created        Space[]
+  invites_sent          Invite[]            @relation("InviteCreator")
+  invites_received      Invite[]            @relation("InviteInvitee")
+  track_memberships     TrackMember[]       @relation("TrackMemberUser")
+  track_members_added   TrackMember[]       @relation("TrackMemberAdder")
+  tracks_created        Track[]
+  generate_jobs_created GenerateJob[]       @relation("GenerateJobAuthor")
+  collections_created   Collection[]
+  audit_actions         AuditEvent[]        @relation("AuditActor")
+  audit_targets         AuditEvent[]        @relation("AuditTarget")
+  problems_created      Problem[]
+  solutions_added       ReferenceSolution[]
+  submissions           Submission[]
 
   @@map("users")
 }
@@ -69,9 +78,13 @@ enum SpaceVisibility {
   private
 }
 
+// Order of power: owner > administrator > editor > observer > solver.
+// A visitor or a signed-in non-member is a "viewer": not a stored role.
 enum SpaceRole {
   owner
+  administrator
   editor
+  observer
   solver
 }
 
@@ -84,8 +97,8 @@ enum InviteStatus {
 
 model Space {
   id            String          @id @default(uuid()) @db.Uuid
-  // Who created it. Owners are the memberships with role = owner (there can
-  // be several, and ownership can move); this column never changes.
+  // Who created it. The owner is the one membership with role = owner (exactly
+  // one; ownership can be handed over); this column never changes.
   created_by_id String          @db.Uuid
   name          String          @db.VarChar(80)
   // Lower-case; shares one namespace with usernames (a personal Space's slug
@@ -98,10 +111,13 @@ model Space {
   created_at    DateTime        @default(now()) @db.Timestamptz(3)
   updated_at    DateTime        @updatedAt @db.Timestamptz(3)
 
-  created_by  User         @relation(fields: [created_by_id], references: [id])
-  memberships Membership[]
-  invites     Invite[]
-  problems    Problem[]
+  created_by   User         @relation(fields: [created_by_id], references: [id])
+  memberships  Membership[]
+  invites      Invite[]
+  problems     Problem[]
+  tracks       Track[]
+  collections  Collection[]
+  audit_events AuditEvent[]
 
   @@index([visibility, archived_at])
   @@map("spaces")
@@ -128,6 +144,9 @@ model Membership {
 model Invite {
   id            String       @id @default(uuid()) @db.Uuid
   space_id      String       @db.Uuid
+  // Set for an invitation to one Track (GRD-80): accepting it makes the person
+  // a member of the Space as a solver (if they are not one yet) and of the Track.
+  track_id      String?      @db.Uuid
   created_by_id String       @db.Uuid
   invitee_id    String?      @db.Uuid
   token_hash    String       @unique @db.VarChar(64)
@@ -137,12 +156,14 @@ model Invite {
   created_at    DateTime     @default(now()) @db.Timestamptz(3)
   responded_at  DateTime?    @db.Timestamptz(3)
 
-  space      Space @relation(fields: [space_id], references: [id], onDelete: Cascade)
-  created_by User  @relation("InviteCreator", fields: [created_by_id], references: [id])
-  invitee    User? @relation("InviteInvitee", fields: [invitee_id], references: [id], onDelete: Cascade)
+  space      Space  @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  track      Track? @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  created_by User   @relation("InviteCreator", fields: [created_by_id], references: [id])
+  invitee    User?  @relation("InviteInvitee", fields: [invitee_id], references: [id], onDelete: Cascade)
 
   @@index([space_id, status])
   @@index([invitee_id, status])
+  @@index([track_id, status])
   @@map("invites")
 }
 
@@ -183,17 +204,25 @@ model Problem {
   created_at         DateTime      @default(now()) @db.Timestamptz(3)
   updated_at         DateTime      @updatedAt @db.Timestamptz(3)
 
-  space           Space            @relation(fields: [space_id], references: [id], onDelete: Cascade)
-  created_by      User             @relation(fields: [created_by_id], references: [id])
-  current_version ProblemVersion?  @relation("CurrentVersion", fields: [current_version_id], references: [id], onDelete: SetNull)
-  versions        ProblemVersion[] @relation("VersionOfProblem")
+  space           Space               @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by      User                @relation(fields: [created_by_id], references: [id])
+  current_version ProblemVersion?     @relation("CurrentVersion", fields: [current_version_id], references: [id], onDelete: SetNull)
+  versions        ProblemVersion[]    @relation("VersionOfProblem")
   submissions     Submission[]
+  collections     CollectionProblem[]
 
   @@unique([space_id, slug])
   // Problem lists of a Space by status, newest change first.
   @@index([space_id, status, updated_at(sort: Desc)])
   @@index([created_by_id, status])
   @@map("problems")
+}
+
+enum StatementMode {
+  markdown
+  pdf
+
+  @@map("statement_mode")
 }
 
 model ProblemVersion {
@@ -204,6 +233,11 @@ model ProblemVersion {
   title             String               @db.VarChar(200)
   // Markdown with KaTeX maths. Drafts may be empty; publishing requires text.
   statement         String               @default("")
+  // Markdown or an uploaded PDF (GRD-73). Both can be kept on a draft; the mode says which one solvers get.
+  statement_mode    StatementMode        @default(markdown)
+  statement_pdf_sha256     String?       @db.VarChar(64)
+  statement_pdf_size_bytes Int?
+  statement_pdf_pages      Int?
   time_limit_ms     Int
   memory_limit_kb   Int
   allowed_languages Language[]
@@ -216,6 +250,7 @@ model ProblemVersion {
   test_cases          TestCase[]
   reference_solutions ReferenceSolution[]
   submissions         Submission[]
+  generate_jobs       GenerateJob[]
 
   @@unique([problem_id, version_number])
   @@map("problem_versions")
@@ -229,15 +264,18 @@ model TestCase {
   // 1-based order; this is the order Judge runs the tests in.
   position           Int
   input_sha256       String   @db.VarChar(64)
-  output_sha256      String   @db.VarChar(64)
+  // Null while the expected output is still to be created (pasted without one,
+  // GRD-108); a version cannot be published until every test has one.
+  output_sha256      String?  @db.VarChar(64)
   input_size_bytes   Int
-  output_size_bytes  Int
+  output_size_bytes  Int?
   // Samples are shown to solvers (content and judging feedback); the rest are hidden.
   is_sample          Boolean  @default(false)
   created_at         DateTime @default(now()) @db.Timestamptz(3)
   updated_at         DateTime @updatedAt @db.Timestamptz(3)
 
-  version ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  version       ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  generate_runs GenerateRun[]
 
   @@index([problem_version_id, position])
   @@map("test_cases")
@@ -299,6 +337,10 @@ model Submission {
   id                 String           @id @default(uuid()) @db.Uuid
   user_id            String           @db.Uuid
   problem_id         String           @db.Uuid
+  // The Track the solver submitted from (GRD-93): the one given in the request,
+  // else the first Track that reaches the problem; null for staff outside any
+  // Track. Deleting a Track keeps the submission.
+  track_id           String?          @db.Uuid
   // The exact version that was submitted to: results never change when the
   // problem is edited later.
   problem_version_id String           @db.Uuid
@@ -329,12 +371,14 @@ model Submission {
 
   user    User                   @relation(fields: [user_id], references: [id])
   problem Problem                @relation(fields: [problem_id], references: [id])
+  track   Track?                 @relation(fields: [track_id], references: [id], onDelete: SetNull)
   version ProblemVersion         @relation(fields: [problem_version_id], references: [id])
   results SubmissionTestResult[]
 
   // "My submissions of this problem", "everyone's submissions of this problem", newest first.
   @@index([user_id, problem_id, created_at(sort: Desc)])
   @@index([problem_id, created_at(sort: Desc)])
+  @@index([track_id, created_at(sort: Desc)])
   // The dispatcher looks for queued submissions that are due.
   @@index([status, next_dispatch_at])
   @@map("submissions")
@@ -357,8 +401,226 @@ model SubmissionTestResult {
   stdout_preview  String?     @db.VarChar(1024)
   checker_message String?     @db.VarChar(256)
 
-  submission Submission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  submission Submission            @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  output     SubmissionTestOutput?
 
   @@unique([submission_id, position])
   @@map("submission_test_results")
+}
+
+// What the program printed on a test, as far as Judge kept it (GRD-93). Hidden
+// tests included, so it is only ever read for people who may see hidden tests
+// (owner, administrator, editor, observer), never for solvers.
+model SubmissionTestOutput {
+  result_id         String  @id @db.Uuid
+  stdout            String?
+  // Full size, so the web app can say the text was cut.
+  stdout_size_bytes BigInt?
+  stderr            String?
+  stderr_size_bytes BigInt?
+
+  result SubmissionTestResult @relation(fields: [result_id], references: [id], onDelete: Cascade)
+
+  @@map("submission_test_outputs")
+}
+
+// --- Tracks and Collections (M3: GRD-77) -------------------------------------
+//
+// Space > Track > Collection > Problem. Solvers (and visitors) only see what is
+// reachable through a Track they can access (GRD-81); owners, administrators,
+// editors and observers see everything in the Space.
+
+// space: everyone who can see the Space can see the Track.
+// members: only the people added to the Track (staff always see every Track).
+enum TrackPrivacy {
+  space
+  members
+}
+
+model Track {
+  id            String       @id @default(uuid()) @db.Uuid
+  space_id      String       @db.Uuid
+  created_by_id String       @db.Uuid
+  name          String       @db.VarChar(80)
+  // Unique inside the Space, also after archiving (the URL stays reserved).
+  slug          String       @db.VarChar(64)
+  description   String       @default("") @db.VarChar(500)
+  privacy       TrackPrivacy @default(space)
+  // 1-based display order inside the Space.
+  position      Int
+  archived_at   DateTime?    @db.Timestamptz(3)
+  created_at    DateTime     @default(now()) @db.Timestamptz(3)
+  updated_at    DateTime     @updatedAt @db.Timestamptz(3)
+
+  space        Space             @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by   User              @relation(fields: [created_by_id], references: [id])
+  collections  TrackCollection[]
+  members      TrackMember[]
+  invites      Invite[]
+  audit_events AuditEvent[]
+  submissions  Submission[]
+
+  @@unique([space_id, slug])
+  @@index([space_id, position])
+  @@map("tracks")
+}
+
+// A set of problems. May belong to no Track, one or several; a problem may be
+// in several Collections.
+model Collection {
+  id            String    @id @default(uuid()) @db.Uuid
+  space_id      String    @db.Uuid
+  created_by_id String    @db.Uuid
+  name          String    @db.VarChar(80)
+  slug          String    @db.VarChar(64)
+  description   String    @default("") @db.VarChar(500)
+  archived_at   DateTime? @db.Timestamptz(3)
+  created_at    DateTime  @default(now()) @db.Timestamptz(3)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(3)
+
+  space      Space               @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  created_by User                @relation(fields: [created_by_id], references: [id])
+  tracks     TrackCollection[]
+  problems   CollectionProblem[]
+
+  @@unique([space_id, slug])
+  @@map("collections")
+}
+
+model TrackCollection {
+  track_id      String @db.Uuid
+  collection_id String @db.Uuid
+  // 1-based order of the Collection inside the Track.
+  position      Int
+
+  track      Track      @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+
+  @@id([track_id, collection_id])
+  @@index([collection_id])
+  @@map("track_collections")
+}
+
+model CollectionProblem {
+  collection_id String @db.Uuid
+  problem_id    String @db.Uuid
+  // 1-based order of the problem inside the Collection.
+  position      Int
+
+  collection Collection @relation(fields: [collection_id], references: [id], onDelete: Cascade)
+  problem    Problem    @relation(fields: [problem_id], references: [id], onDelete: Cascade)
+
+  @@id([collection_id, problem_id])
+  @@index([problem_id])
+  @@map("collection_problems")
+}
+
+model TrackMember {
+  track_id    String   @db.Uuid
+  user_id     String   @db.Uuid
+  added_by_id String   @db.Uuid
+  joined_at   DateTime @default(now()) @db.Timestamptz(3)
+
+  track    Track @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  user     User  @relation("TrackMemberUser", fields: [user_id], references: [id], onDelete: Cascade)
+  added_by User  @relation("TrackMemberAdder", fields: [added_by_id], references: [id])
+
+  @@id([track_id, user_id])
+  @@index([user_id])
+  @@map("track_members")
+}
+
+// Who invited, revoked or removed whom (GRD-80). Append-only.
+model AuditEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  space_id       String   @db.Uuid
+  track_id       String?  @db.Uuid
+  actor_id       String   @db.Uuid
+  // e.g. track.invite_created, track.invite_revoked, track.member_removed
+  action         String   @db.VarChar(48)
+  target_user_id String?  @db.Uuid
+  data           Json?
+  created_at     DateTime @default(now()) @db.Timestamptz(3)
+
+  space       Space  @relation(fields: [space_id], references: [id], onDelete: Cascade)
+  track       Track? @relation(fields: [track_id], references: [id], onDelete: SetNull)
+  actor       User   @relation("AuditActor", fields: [actor_id], references: [id])
+  target_user User?  @relation("AuditTarget", fields: [target_user_id], references: [id], onDelete: SetNull)
+
+  @@index([space_id, created_at(sort: Desc)])
+  @@map("audit_events")
+}
+
+// --- Generating expected outputs from a solution (M3: GRD-108) -----------------
+//
+// One job per request, one run per testcase (so the web app can show progress,
+// stop, and keep what finished). Results are stored as content-addressed test
+// files and only become part of the problem when the author saves the page.
+
+enum GenerateJobStatus {
+  running
+  completed
+  stopped
+  timed_out
+  failed
+}
+
+enum GenerateRunStatus {
+  queued
+  running
+  done
+  failed
+}
+
+model GenerateJob {
+  id                 String            @id @default(uuid()) @db.Uuid
+  problem_version_id String            @db.Uuid
+  created_by_id      String            @db.Uuid
+  // The solution as it was when the job started.
+  language           Language
+  source             String
+  status             GenerateJobStatus @default(running)
+  // COMPILE_ERROR, JUDGE_UNAVAILABLE, ... when status = failed.
+  error_code         String?           @db.VarChar(64)
+  // First line of the compiler message, for the author.
+  error_message      String?           @db.VarChar(300)
+  deadline_at        DateTime          @db.Timestamptz(3)
+  created_at         DateTime          @default(now()) @db.Timestamptz(3)
+  finished_at        DateTime?         @db.Timestamptz(3)
+
+  version    ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  created_by User           @relation("GenerateJobAuthor", fields: [created_by_id], references: [id])
+  runs       GenerateRun[]
+
+  @@index([problem_version_id, status])
+  @@index([created_at])
+  @@map("generate_jobs")
+}
+
+model GenerateRun {
+  id                String            @id @default(uuid()) @db.Uuid
+  job_id            String            @db.Uuid
+  test_case_id      String            @db.Uuid
+  position          Int
+  status            GenerateRunStatus @default(queued)
+  judge_job_id      String?           @unique @db.Uuid
+  attempts          Int               @default(0)
+  next_dispatch_at  DateTime?         @db.Timestamptz(3)
+  // Judge's verdict for this test when it did not produce an output (TLE, MLE, RE, OLE, ISE).
+  verdict           TestVerdict?
+  time_ms           Int?
+  memory_kb         Int?
+  stderr            String?           @db.VarChar(4096)
+  output_sha256     String?           @db.VarChar(64)
+  output_size_bytes Int?
+  // Same as the current expected output, comparing the way Judge does.
+  same_as_current   Boolean?
+  error_code        String?           @db.VarChar(64)
+  finished_at       DateTime?         @db.Timestamptz(3)
+
+  job       GenerateJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  test_case TestCase    @relation(fields: [test_case_id], references: [id], onDelete: Cascade)
+
+  @@index([job_id, position])
+  @@map("generate_runs")
 }

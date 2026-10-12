@@ -1,8 +1,10 @@
 import type { PrismaClient, User } from '../../../generated/prisma/client';
-import { ConflictError, GoneError, NotFoundError } from '@/errors';
+import { ConflictError, ForbiddenError, GoneError, NotFoundError } from '@/errors';
 import { generateToken, hashToken } from '@/libs/tokens';
 import TLogger, { Layer } from '@/logging/logger';
+import { canAssignRole } from '@/permissions/can';
 import { Db } from '@/repositories/db';
+import CatalogRepository from '@/repositories/catalog.repository';
 import InviteRepository from '@/repositories/invite.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import UserRepository from '@/repositories/user.repository';
@@ -15,6 +17,8 @@ type InviteRow = NonNullable<Awaited<ReturnType<InviteRepository['findById']>>>;
 export interface InviteDto {
   id: string;
   space: { name: string; slug: string };
+  /** Set for an invitation to one Track; accepting it makes the person a solver of the Space. */
+  track: { name: string; slug: string } | null;
   role: Role;
   /** `expired` is computed from expires_at and never stored. */
   status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
@@ -30,7 +34,7 @@ export interface InviteDto {
 }
 
 export interface CreateInviteInput {
-  role: 'editor' | 'solver';
+  role: 'administrator' | 'editor' | 'observer' | 'solver';
   username?: string;
   expires_in_days: number;
 }
@@ -46,6 +50,7 @@ export default class InviteService {
     private readonly spaces: SpaceRepository,
     private readonly users: UserRepository,
     private readonly spaceService: SpaceService,
+    private readonly catalog: CatalogRepository,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -58,6 +63,11 @@ export default class InviteService {
     const logger = this.logger.setContext('service.invite.create', requestId);
     const access = await this.spaceService.load(this.prisma, slug, user);
     assertCan(user, 'space.manage_members', access);
+    // An administrator can invite editors, observers and solvers; only the
+    // owner can invite another administrator (GRD-96).
+    if (!canAssignRole(access.role, null, input.role)) {
+      throw new ForbiddenError('Only the owner can invite an administrator.');
+    }
 
     let inviteeId: string | null = null;
     if (input.username) {
@@ -111,8 +121,13 @@ export default class InviteService {
     const access = await this.spaceService.load(this.prisma, slug, user);
     assertCan(user, 'space.manage_members', access);
     const invite = await this.invites.findById(this.prisma, inviteId);
-    if (!invite || invite.space.id !== access.space.id)
+    // Track invitations are revoked from their Track, not from the Space's list.
+    if (!invite || invite.space.id !== access.space.id || invite.track) {
       throw new NotFoundError('Invitation not found.');
+    }
+    if (!canAssignRole(access.role, null, invite.role as Role)) {
+      throw new ForbiddenError('Only the owner can revoke an invitation to administrator.');
+    }
     if (!(await this.invites.settle(this.prisma, invite.id, 'revoked', this.now()))) {
       throw new ConflictError('This invitation is no longer pending.');
     }
@@ -160,6 +175,7 @@ export default class InviteService {
     find: (db: Db) => Promise<InviteRow | null>
   ): Promise<{
     space: { name: string; slug: string };
+    track: { name: string; slug: string } | null;
     role: Role;
     status: 'accepted' | 'declined';
   }> {
@@ -180,8 +196,14 @@ export default class InviteService {
       ) {
         throw new GoneError(UNAVAILABLE);
       }
+      const membership = await this.spaces.findMembership(tx, invite.space.id, user.id);
       if (outcome === 'accepted') {
-        if (await this.spaces.findMembership(tx, invite.space.id, user.id)) {
+        if (invite.track) {
+          if (invite.track.archived_at) throw new GoneError(UNAVAILABLE);
+          if (await this.catalog.findTrackMember(tx, invite.track.id, user.id)) {
+            throw new ConflictError('You are already a member of this Track.');
+          }
+        } else if (membership) {
           throw new ConflictError('You are already a member of this Space.');
         }
       }
@@ -190,23 +212,38 @@ export default class InviteService {
         throw new GoneError(UNAVAILABLE);
       }
       if (outcome === 'accepted') {
-        await this.spaces.addMember(tx, invite.space.id, user.id, invite.role);
+        // A Track invitation brings the person into the Space as a solver, but
+        // never changes the role of someone who is already a member.
+        if (!membership) await this.spaces.addMember(tx, invite.space.id, user.id, invite.role);
+        if (invite.track) {
+          await this.catalog.addTrackMember(tx, invite.track.id, user.id, invite.created_by_id);
+          await this.catalog.audit(tx, {
+            space_id: invite.space.id,
+            track_id: invite.track.id,
+            actor_id: user.id,
+            action: 'track.member_joined',
+            target_user_id: user.id,
+            data: { invite_id: invite.id },
+          });
+        }
       }
       return invite;
     });
     logger.info({ message: `invite ${outcome}`, data: { inviteId: result.id, userId: user.id } });
     return {
       space: { name: result.space.name, slug: result.space.slug },
+      track: result.track ? { name: result.track.name, slug: result.track.slug } : null,
       role: result.role as Role,
       status: outcome,
     };
   }
 
-  private toDto(row: InviteRow): InviteDto {
+  toDto(row: InviteRow): InviteDto {
     const expired = row.status === 'pending' && row.expires_at <= this.now();
     return {
       id: row.id,
       space: { name: row.space.name, slug: row.space.slug },
+      track: row.track ? { name: row.track.name, slug: row.track.slug } : null,
       role: row.role as Role,
       status: expired ? 'expired' : row.status,
       expires_at: row.expires_at.toISOString(),

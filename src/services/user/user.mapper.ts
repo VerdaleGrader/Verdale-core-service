@@ -6,6 +6,8 @@ export interface SessionUser {
   email: string;
   username: string;
   display_name: string;
+  /** The provider's profile picture, or null (show initials). */
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -13,7 +15,11 @@ export interface SessionUser {
 export interface PublicUser {
   username: string;
   display_name: string;
+  avatar_url: string | null;
 }
+
+/** What repositories select when a user is shown to other people. */
+export const PUBLIC_USER_SELECT = { username: true, display_name: true, avatar_url: true } as const;
 
 export function toSessionUser(user: User): SessionUser {
   return {
@@ -21,10 +27,19 @@ export function toSessionUser(user: User): SessionUser {
     email: user.email,
     username: user.username,
     display_name: user.display_name,
+    avatar_url: user.avatar_url,
     created_at: user.created_at.toISOString(),
   };
 }
 
-export function toPublicUser(user: { username: string; display_name: string }): PublicUser {
-  return { username: user.username, display_name: user.display_name };
+export function toPublicUser(user: {
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+}): PublicUser {
+  return {
+    username: user.username,
+    display_name: user.display_name,
+    avatar_url: user.avatar_url,
+  };
 }

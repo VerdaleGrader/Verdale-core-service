@@ -1,22 +1,25 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { IMAGE_MAX_BYTES } from '@/constants/limits';
+import { IMAGE_MAX_BYTES, PDF_MAX_BYTES } from '@/constants/limits';
 import { ValidationError } from '@/errors';
 import { readUploads } from '@/controllers/upload';
 import { requireUser } from '@/middleware/session';
 import ImageService from '@/services/problem/image.service';
 import ProblemService from '@/services/problem/problem.service';
+import StatementService from '@/services/problem/statement.service';
 import {
   createProblemBody,
   problemListQuery,
   problemSlugParams,
   slugParams,
+  statementPdfQuery,
   updateProblemBody,
 } from '@/validation/schemas';
 
 export default class ProblemController {
   constructor(
     private readonly problemService: ProblemService,
-    private readonly imageService: ImageService
+    private readonly imageService: ImageService,
+    private readonly statementService: StatementService
   ) {}
 
   /** GET /api/v1/spaces/:slug/problems */
@@ -115,5 +118,49 @@ export default class ProblemController {
       request.id
     );
     return reply.status(201).send(uploaded);
+  }
+
+  /** PUT /api/v1/spaces/:slug/problems/:problemSlug/statement-pdf (multipart `file`) */
+  async uploadStatementPdf(request: FastifyRequest, reply: FastifyReply) {
+    const user = requireUser(request);
+    const { slug, problemSlug } = problemSlugParams.parse(request.params);
+    await this.problemService.authorize(user, 'problem.update', slug, problemSlug);
+    const { files } = await readUploads(request, {
+      maxFileBytes: PDF_MAX_BYTES,
+      fileFields: ['file'],
+    });
+    if (!files.file) {
+      throw new ValidationError([{ field: 'file', message: 'Choose a PDF to upload.' }]);
+    }
+    return reply.send(
+      await this.statementService.upload(user, slug, problemSlug, files.file, request.id)
+    );
+  }
+
+  /** DELETE /api/v1/spaces/:slug/problems/:problemSlug/statement-pdf */
+  async removeStatementPdf(request: FastifyRequest, reply: FastifyReply) {
+    const user = requireUser(request);
+    const { slug, problemSlug } = problemSlugParams.parse(request.params);
+    return reply.send(await this.statementService.remove(user, slug, problemSlug, request.id));
+  }
+
+  /**
+   * GET /api/v1/spaces/:slug/problems/:problemSlug/statement.pdf
+   * `sandbox` and `nosniff` keep scripts inside a PDF from running on our origin.
+   */
+  async statementPdf(request: FastifyRequest, reply: FastifyReply) {
+    const { slug, problemSlug } = problemSlugParams.parse(request.params);
+    const { draft } = statementPdfQuery.parse(request.query);
+    const file = await this.statementService.read(request.currentUser, slug, problemSlug, {
+      draft,
+    });
+    return reply
+      .type('application/pdf')
+      .header('Content-Length', file.size)
+      .header('Content-Disposition', 'inline; filename="statement.pdf"')
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Security-Policy', "sandbox; default-src 'none'")
+      .header('Cache-Control', 'private, no-store')
+      .send(file.body);
   }
 }

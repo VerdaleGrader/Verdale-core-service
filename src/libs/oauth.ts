@@ -12,6 +12,8 @@ export interface OAuthProfile {
   displayName: string;
   /** Suggested username (GitHub login, Google name or e-mail prefix). */
   usernameHint: string;
+  /** The provider's profile picture, when it has one (an https URL). */
+  avatarUrl?: string;
 }
 
 export interface OAuthProvider {
@@ -46,6 +48,17 @@ async function readJson(response: Response, what: string): Promise<Record<string
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** Only https URLs of sensible length are kept as profile pictures. */
+export function avatarOf(value: unknown): string | undefined {
+  const raw = text(value);
+  if (!raw || raw.length > 512) return undefined;
+  try {
+    return new URL(raw).protocol === 'https:' ? raw : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export class GitHubProvider implements OAuthProvider {
@@ -121,6 +134,7 @@ export class GitHubProvider implements OAuthProvider {
       emailVerified: Boolean(primary),
       displayName: text(user.name) || login,
       usernameHint: login,
+      avatarUrl: avatarOf(user.avatar_url),
     };
   }
 }
@@ -185,6 +199,7 @@ export class GoogleProvider implements OAuthProvider {
       emailVerified: info.email_verified === true,
       displayName: text(info.name) || email.split('@')[0] || '',
       usernameHint: email.split('@')[0] || text(info.given_name),
+      avatarUrl: avatarOf(info.picture),
     };
   }
 }

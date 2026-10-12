@@ -29,7 +29,12 @@ import SpaceController from '@/controllers/space/space.controller';
 import UserController from '@/controllers/user/user.controller';
 import { OAuthProviders } from '@/libs/oauth';
 import { SESSION_COOKIE } from '@/middleware/session';
+import CatalogRepository from '@/repositories/catalog.repository';
 import InviteRepository from '@/repositories/invite.repository';
+import CollectionService from '@/services/catalog/collection.service';
+import TrackMemberService from '@/services/catalog/track-member.service';
+import TrackService from '@/services/catalog/track.service';
+import CatalogController from '@/controllers/catalog/catalog.controller';
 import ProblemRepository from '@/repositories/problem.repository';
 import SessionRepository from '@/repositories/session.repository';
 import SolutionRepository from '@/repositories/solution.repository';
@@ -39,12 +44,18 @@ import TestCaseRepository from '@/repositories/test-case.repository';
 import UserRepository from '@/repositories/user.repository';
 import AuthService from '@/services/auth/auth.service';
 import ImageService from '@/services/problem/image.service';
+import StatementService from '@/services/problem/statement.service';
 import ProblemService from '@/services/problem/problem.service';
+import GenerateService from '@/services/problem/generate.service';
+import GenerateRepository from '@/repositories/generate.repository';
 import SolutionService from '@/services/problem/solution.service';
 import TestCaseService from '@/services/problem/test-case.service';
 import JudgeResultService from '@/services/judge/judge-result.service';
 import JudgeDispatcher from '@/services/submission/dispatcher';
 import SubmissionService from '@/services/submission/submission.service';
+import SubmissionReviewService from '@/services/submission/submission-review.service';
+import SubmissionReviewController from '@/controllers/submission/submission-review.controller';
+import SubmissionReportRepository from '@/repositories/submission-report.repository';
 import { SUBMISSIONS_PER_MINUTE, TEST_LIMITS } from '@/constants/limits';
 import InviteService from '@/services/space/invite.service';
 import MemberService from '@/services/space/member.service';
@@ -68,7 +79,7 @@ export interface ApiDependencies {
   /** Base URL of statement pictures, e.g. "/api/v1/assets" or the public bucket's domain. */
   publicAssetBaseUrl: string;
   /** Test knobs; production leaves them out. */
-  tuning?: { streamIntervalMs?: number; dispatchGiveUpMs?: number };
+  tuning?: { streamIntervalMs?: number; dispatchGiveUpMs?: number; generateTimeoutMs?: number };
   now?: () => Date;
 }
 
@@ -76,6 +87,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Hands queued submissions to Judge; index.ts starts and stops its background loop. */
     dispatcher?: JudgeDispatcher;
+    /** Creates expected outputs from solutions; index.ts starts and stops its background loop. */
+    generator?: GenerateService;
   }
 }
 
@@ -177,18 +190,20 @@ function registerApi(
   const sessionRepository = new SessionRepository();
   const spaceRepository = new SpaceRepository();
   const inviteRepository = new InviteRepository();
+  const catalogRepository = new CatalogRepository();
 
   const authService = new AuthService(
     prisma,
     userRepository,
     sessionRepository,
     spaceRepository,
+    catalogRepository,
     oauthProviders,
     auth,
     now
   );
   const userService = new UserService(prisma, userRepository, spaceRepository);
-  const spaceService = new SpaceService(prisma, spaceRepository);
+  const spaceService = new SpaceService(prisma, spaceRepository, catalogRepository);
   const memberService = new MemberService(prisma, spaceRepository, userRepository, spaceService);
   const inviteService = new InviteService(
     prisma,
@@ -196,6 +211,24 @@ function registerApi(
     spaceRepository,
     userRepository,
     spaceService,
+    catalogRepository,
+    now
+  );
+  const trackService = new TrackService(prisma, catalogRepository, spaceRepository, spaceService);
+  const collectionService = new CollectionService(
+    prisma,
+    catalogRepository,
+    spaceRepository,
+    spaceService
+  );
+  const trackMemberService = new TrackMemberService(
+    prisma,
+    catalogRepository,
+    inviteRepository,
+    spaceRepository,
+    userRepository,
+    spaceService,
+    (row) => inviteService.toDto(row),
     now
   );
 
@@ -209,6 +242,7 @@ function registerApi(
     problemRepository,
     testCaseRepository,
     solutionRepository,
+    catalogRepository,
     spaceService,
     storage.tests,
     now
@@ -227,6 +261,24 @@ function registerApi(
     problemService
   );
   const imageService = new ImageService(prisma, problemService, storage.assets, publicAssetBaseUrl);
+  const statementService = new StatementService(
+    prisma,
+    problemRepository,
+    problemService,
+    storage.tests
+  );
+  const generateService = new GenerateService(
+    prisma,
+    new GenerateRepository(),
+    problemRepository,
+    testCaseRepository,
+    solutionRepository,
+    problemService,
+    judge.client,
+    storage.tests,
+    { callbackUrl: judge.config.callbackUrl, now, timeoutMs: tuning?.generateTimeoutMs }
+  );
+  app.decorate('generator', generateService);
   const dispatcher = new JudgeDispatcher(
     prisma,
     submissionRepository,
@@ -242,8 +294,20 @@ function registerApi(
     testCaseRepository,
     problemRepository,
     spaceRepository,
+    catalogRepository,
     problemService,
     dispatcher,
+    now
+  );
+  const submissionReviewService = new SubmissionReviewService(
+    prisma,
+    new SubmissionReportRepository(),
+    submissionRepository,
+    catalogRepository,
+    spaceRepository,
+    testCaseRepository,
+    spaceService,
+    storage.tests,
     now
   );
   const judgeResultService = new JudgeResultService(
@@ -251,22 +315,33 @@ function registerApi(
     submissionRepository,
     testCaseRepository,
     judge.config.callbackKeys,
+    generateService,
     now
   );
 
   const authController = new AuthController(authService, auth, oauthProviders);
-  const problemController = new ProblemController(problemService, imageService);
-  const testCaseController = new TestCaseController(testCaseService, problemService);
+  const problemController = new ProblemController(problemService, imageService, statementService);
+  const testCaseController = new TestCaseController(
+    testCaseService,
+    problemService,
+    generateService
+  );
   const solutionController = new SolutionController(solutionService);
   const assetController = new AssetController(imageService);
   const submissionController = new SubmissionController(
     submissionService,
     tuning?.streamIntervalMs
   );
+  const submissionReviewController = new SubmissionReviewController(submissionReviewService);
   const judgeResultController = new JudgeResultController(judgeResultService);
   const userController = new UserController(userService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
   const inviteController = new InviteController(inviteService);
+  const catalogController = new CatalogController(
+    trackService,
+    collectionService,
+    trackMemberService
+  );
 
   // Judge's result callback. Not part of the browser API: no cookies, no CSRF
   // check, no session. The body stays raw bytes because the HMAC signature
@@ -274,7 +349,7 @@ function registerApi(
   app.register(async (internal) => {
     internal.addContentTypeParser(
       'application/json',
-      { parseAs: 'buffer', bodyLimit: 8 * 1024 * 1024 },
+      { parseAs: 'buffer', bodyLimit: 24 * 1024 * 1024 },
       (_request, body, done) => done(null, body)
     );
     internal.post(
@@ -322,6 +397,8 @@ function registerApi(
     });
 
     const signInLimit = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
+    // Renaming yourself is rare; this only stops a script hammering it (GRD-68).
+    const profileLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
 
     await scope.register(
       async (v1) => {
@@ -339,7 +416,7 @@ function registerApi(
         v1.post('/auth/logout', authController.logout.bind(authController));
 
         v1.get('/me', userController.me.bind(userController));
-        v1.patch('/me', userController.updateMe.bind(userController));
+        v1.patch('/me', profileLimit, userController.updateMe.bind(userController));
         v1.get('/me/spaces', spaceController.listMine.bind(spaceController));
         v1.get('/me/invites', inviteController.listMine.bind(inviteController));
         v1.post('/me/invites/:inviteId/accept', inviteController.acceptById.bind(inviteController));
@@ -371,7 +448,51 @@ function registerApi(
           spaceController.revokeInvite.bind(spaceController)
         );
 
+        // --- tracks and collections (M3) ---------------------------------------
+        const tracks = '/spaces/:slug/tracks';
+        const track = `${tracks}/:trackSlug`;
+        v1.get(tracks, catalogController.listTracks.bind(catalogController));
+        v1.post(tracks, catalogController.createTrack.bind(catalogController));
+        v1.put(`${tracks}/order`, catalogController.reorderTracks.bind(catalogController));
+        v1.get(track, catalogController.getTrack.bind(catalogController));
+        v1.patch(track, catalogController.updateTrack.bind(catalogController));
+        v1.delete(track, catalogController.archiveTrack.bind(catalogController));
+        v1.put(
+          `${track}/collections`,
+          catalogController.setTrackCollections.bind(catalogController)
+        );
+        v1.get(`${track}/progress`, catalogController.trackProgress.bind(catalogController));
+        v1.get(`${track}/members`, catalogController.listTrackMembers.bind(catalogController));
+        v1.delete(
+          `${track}/members/:username`,
+          catalogController.removeTrackMember.bind(catalogController)
+        );
+        v1.get(`${track}/invites`, catalogController.listTrackInvites.bind(catalogController));
+        v1.post(`${track}/invites`, catalogController.createTrackInvite.bind(catalogController));
+        v1.delete(
+          `${track}/invites/:inviteId`,
+          catalogController.revokeTrackInvite.bind(catalogController)
+        );
+
+        const collections = '/spaces/:slug/collections';
+        const collection = `${collections}/:collectionSlug`;
+        v1.get(collections, catalogController.listCollections.bind(catalogController));
+        v1.post(collections, catalogController.createCollection.bind(catalogController));
+        v1.get(collection, catalogController.getCollection.bind(catalogController));
+        v1.patch(collection, catalogController.updateCollection.bind(catalogController));
+        v1.delete(collection, catalogController.archiveCollection.bind(catalogController));
+        v1.put(
+          `${collection}/problems`,
+          catalogController.setCollectionProblems.bind(catalogController)
+        );
+        v1.patch(
+          `${collection}/problems`,
+          catalogController.patchCollectionProblems.bind(catalogController)
+        );
+
         // --- problems (M3) ---------------------------------------------------
+        // Pasting and uploading many testcases at once is normal; this only stops a runaway script.
+        const stageLimit = { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } };
         const problems = '/spaces/:slug/problems';
         const problem = `${problems}/:problemSlug`;
         v1.get(problems, problemController.list.bind(problemController));
@@ -383,9 +504,37 @@ function registerApi(
         v1.post(`${problem}/publish`, problemController.publish.bind(problemController));
         v1.post(`${problem}/archive`, problemController.archive.bind(problemController));
         v1.post(`${problem}/images`, problemController.uploadImage.bind(problemController));
+        v1.put(
+          `${problem}/statement-pdf`,
+          problemController.uploadStatementPdf.bind(problemController)
+        );
+        v1.delete(
+          `${problem}/statement-pdf`,
+          problemController.removeStatementPdf.bind(problemController)
+        );
+        v1.get(`${problem}/statement.pdf`, problemController.statementPdf.bind(problemController));
         v1.get('/assets/:name', assetController.get.bind(assetController));
 
         v1.get(`${problem}/tests`, testCaseController.list.bind(testCaseController));
+        v1.put(`${problem}/tests`, testCaseController.batchSave.bind(testCaseController));
+        v1.post(
+          `${problem}/tests/files`,
+          stageLimit,
+          testCaseController.stageFile.bind(testCaseController)
+        );
+        v1.get(
+          `${problem}/tests/:testId/files/:side`,
+          testCaseController.slice.bind(testCaseController)
+        );
+        v1.post(`${problem}/generate`, testCaseController.generate.bind(testCaseController));
+        v1.get(
+          `${problem}/generate/:jobId`,
+          testCaseController.generateStatus.bind(testCaseController)
+        );
+        v1.post(
+          `${problem}/generate/:jobId/stop`,
+          testCaseController.generateStop.bind(testCaseController)
+        );
         v1.post(`${problem}/tests`, testCaseController.create.bind(testCaseController));
         v1.post(`${problem}/tests/reorder`, testCaseController.reorder.bind(testCaseController));
         v1.put(`${problem}/tests/:testId`, testCaseController.replace.bind(testCaseController));
@@ -432,7 +581,38 @@ function registerApi(
           submissionController.create.bind(submissionController)
         );
         v1.get(`${problem}/submissions`, submissionController.list.bind(submissionController));
+        // Space-wide submissions for owners, administrators, editors and observers (GRD-93).
+        const spaceSubmissions = '/spaces/:slug/submissions';
+        v1.get(spaceSubmissions, submissionReviewController.rows.bind(submissionReviewController));
+        v1.get(
+          `${spaceSubmissions}/versions`,
+          submissionReviewController.versions.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-member`,
+          submissionReviewController.byMember.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-member/:username/problems`,
+          submissionReviewController.memberProblems.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-track`,
+          submissionReviewController.byTrack.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-track/:trackSlug/problems`,
+          submissionReviewController.trackProblems.bind(submissionReviewController)
+        );
+        v1.get(
+          `${spaceSubmissions}/by-problem`,
+          submissionReviewController.byProblem.bind(submissionReviewController)
+        );
         v1.get('/submissions/:submissionId', submissionController.get.bind(submissionController));
+        v1.get(
+          '/submissions/:submissionId/tests/:position',
+          submissionReviewController.testDetail.bind(submissionReviewController)
+        );
         v1.get(
           '/submissions/:submissionId/events',
           submissionController.events.bind(submissionController)
