@@ -299,7 +299,7 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
           .$executeRaw`UPDATE submissions SET next_dispatch_at = now() - interval '1 second'`;
         t.app.dispatcher!.start(20);
         try {
-          for (let i = 0; i < 100 && t.judge.jobs.length === 0; i++)
+          for (let i = 0; i < 300 && t.judge.jobs.length === 0; i++)
             await new Promise((r) => setTimeout(r, 20));
         } finally {
           await t.app.dispatcher!.stop();

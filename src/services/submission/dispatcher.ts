@@ -190,7 +190,18 @@ export default class JudgeDispatcher {
         this.logger.error({ message: 'dispatch loop failed', error: error as Error });
       }
     };
-    this.timer = setInterval(() => void tick(), intervalMs);
+    // Ticks are tracked like other dispatches, so stop() waits for one that is running.
+    // A tick that is still running is not overlapped: two would pick the same due rows.
+    let ticking = false;
+    this.timer = setInterval(() => {
+      if (ticking) return;
+      ticking = true;
+      const run = tick().finally(() => {
+        ticking = false;
+        this.inflight.delete(run);
+      });
+      this.inflight.add(run);
+    }, intervalMs);
     this.timer.unref();
   }
 
