@@ -651,14 +651,553 @@ paths:
           $ref: '#/components/responses/Error'
         '410':
           $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks:
+    get:
+      operationId: listTracks
+      tags: [tracks]
+      summary: Tracks the caller can reach, in order
+      description: >-
+        Staff (owner, administrator, editor, observer) see every Track; everyone else only active
+        Tracks open to the Space or that they joined. A private Space answers 404 to outsiders.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IncludeArchived'
+      responses:
+        '200':
+          description: The Tracks, with the caller's progression
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackSummary'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTrack
+      tags: [tracks]
+      summary: Create a Track (owner, administrator or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTrackRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Track'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/order:
+    put:
+      operationId: reorderTracks
+      tags: [tracks]
+      summary: Set the order of all active Tracks
+      description: >-
+        Send every active Track exactly once; otherwise 409 `ORDER_OUT_OF_DATE`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderTracksRequest'
+      responses:
+        '200':
+          description: The Tracks in the new order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Track'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}:
+    get:
+      operationId: getTrack
+      tags: [tracks]
+      summary: A Track with its Collections, problems and the caller's progression
+      description: >-
+        A Track the caller cannot reach (members-only and not added, or archived) is 404.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      responses:
+        '200':
+          description: The Track
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDetail'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateTrack
+      tags: [tracks]
+      summary: Edit a Track, or archive or restore it
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTrackRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Track'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: archiveTrack
+      tags: [tracks]
+      summary: Archive a Track
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      responses:
+        '204':
+          description: Archived. Problems and Collections are kept.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/collections:
+    put:
+      operationId: setTrackCollections
+      tags: [tracks]
+      summary: Set the Collections of a Track and their order
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTrackCollectionsRequest'
+      responses:
+        '200':
+          description: The Track
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDetail'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/progress:
+    get:
+      operationId: getTrackProgress
+      tags: [tracks]
+      summary: How far each person has got in a Track (staff only)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      responses:
+        '200':
+          description: Progression
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackProgress'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/members:
+    get:
+      operationId: listTrackMembers
+      tags: [tracks]
+      summary: Members of a Track (staff)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      responses:
+        '200':
+          description: The members
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrackMember'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/members/{username}:
+    delete:
+      operationId: removeTrackMember
+      tags: [tracks]
+      summary: Take a person out of a Track (they stay in the Space)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/invites:
+    get:
+      operationId: listTrackInvites
+      tags: [tracks]
+      summary: Pending invitations to a Track (staff)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      responses:
+        '200':
+          description: The invitations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invite'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTrackInvite
+      tags: [tracks]
+      summary: Invite someone to a Track, by link or by username
+      description: >-
+        Whoever accepts joins the Space as a **solver** (if not a member yet) and the Track.
+        The role of an existing member does not change.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTrackInviteRequest'
+      responses:
+        '201':
+          description: Created. The token is shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/tracks/{trackSlug}/invites/{inviteId}:
+    delete:
+      operationId: revokeTrackInvite
+      tags: [tracks]
+      summary: Revoke a pending Track invitation
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/TrackSlug'
+        - $ref: '#/components/parameters/InviteId'
+      responses:
+        '204':
+          description: Revoked
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/collections:
+    get:
+      operationId: listCollections
+      tags: [collections]
+      summary: Collections the caller can reach
+      description: >-
+        Staff see all of them, also those in no Track. Everyone else only Collections in a Track they can reach.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/IncludeArchived'
+      responses:
+        '200':
+          description: The Collections
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CollectionSummary'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createCollection
+      tags: [collections]
+      summary: Create a Collection (owner, administrator or editor)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCollectionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/collections/{collectionSlug}:
+    get:
+      operationId: getCollection
+      tags: [collections]
+      summary: A Collection with its problems and the caller's progression
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CollectionSlug'
+      responses:
+        '200':
+          description: The Collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionDetail'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateCollection
+      tags: [collections]
+      summary: Edit a Collection, or archive or restore it
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CollectionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCollectionRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: archiveCollection
+      tags: [collections]
+      summary: Archive a Collection
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CollectionSlug'
+      responses:
+        '204':
+          description: Archived. Problems are kept.
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/collections/{collectionSlug}/problems:
+    put:
+      operationId: setCollectionProblems
+      tags: [collections]
+      summary: Set the problems of a Collection and their order
+      description: >-
+        Drafts may be added; solvers do not see them.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CollectionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCollectionProblemsRequest'
+      responses:
+        '200':
+          description: The Collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionDetail'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: changeCollectionProblems
+      tags: [collections]
+      summary: Add and remove several problems at once
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CollectionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeCollectionProblemsRequest'
+      responses:
+        '200':
+          description: The Collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionDetail'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
   /api/v1/spaces/{slug}/problems:
     get:
       operationId: listProblems
       tags: [problems]
       summary: Problems of a Space
       description: |
-        Visitors and solvers only ever see `published` problems, whatever `status` says.
-        Owners and editors can also list `draft` and `archived` problems, or `all`
+        Visitors and solvers only ever see `published` problems that sit in a Collection of a Track
+        they can reach (see Tracks), whatever `status` says. A problem outside every such Track
+        answers 404 to them everywhere (detail, submit), as a private Space would.
+        Owners, administrators, editors and observers can also list `draft` and `archived` problems, or `all`
         (default `published`); `mine=true` keeps the ones they created.
         A private Space answers 404 to everyone who is not a member.
       parameters:
@@ -1555,6 +2094,27 @@ components:
       required: true
       schema:
         type: string
+    TrackSlug:
+      name: trackSlug
+      in: path
+      required: true
+      description: Track slug, unique inside its Space
+      schema:
+        type: string
+    CollectionSlug:
+      name: collectionSlug
+      in: path
+      required: true
+      description: Collection slug, unique inside its Space
+      schema:
+        type: string
+    IncludeArchived:
+      name: include_archived
+      in: query
+      description: Staff only; others never see archived items
+      schema:
+        type: boolean
+        default: false
     Page:
       name: page
       in: query
@@ -1730,6 +2290,11 @@ components:
           type: string
           enum: [public, private]
           default: private
+        track_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: Name of the Track every Space starts with. "General" when left out.
     UpdateSpaceRequest:
       type: object
       minProperties: 1
@@ -1773,13 +2338,23 @@ components:
           default: 7
     Invite:
       type: object
-      required: [id, space, role, status, expires_at, created_at, invited_by, invited_user]
+      required: [id, space, track, role, status, expires_at, created_at, invited_by, invited_user]
       properties:
         id:
           type: string
           format: uuid
         space:
           type: object
+          required: [name, slug]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+        track:
+          type: object
+          nullable: true
+          description: Set for an invitation to one Track; accepting it makes the person a solver of the Space
           required: [name, slug]
           properties:
             name:
@@ -1819,10 +2394,20 @@ components:
             $ref: '#/components/schemas/Invite'
     InviteOutcome:
       type: object
-      required: [space, role, status]
+      required: [space, track, role, status]
       properties:
         space:
           type: object
+          required: [name, slug]
+          properties:
+            name:
+              type: string
+            slug:
+              type: string
+        track:
+          type: object
+          nullable: true
+          description: Set for an invitation to one Track; accepting it makes the person a solver of the Space
           required: [name, slug]
           properties:
             name:
@@ -2541,3 +3126,338 @@ components:
           type: string
         message:
           type: string
+    TrackPrivacy:
+      type: string
+      description: >-
+        `space`: everyone who can see the Space can see the Track. `members`: only people added to
+        the Track (staff always see every Track).
+      enum: [space, members]
+    Progress:
+      type: object
+      description: >-
+        Problems solved (at least one accepted submission, any version) out of the published
+        problems in the non-archived Collections of the Track. A problem counts once.
+      required: [solved, total]
+      properties:
+        solved:
+          type: integer
+        total:
+          type: integer
+    Track:
+      type: object
+      required: [id, name, slug, description, privacy, position, archived, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+          description: 2-64 chars, lower-case letters, digits, `-` or `_`; unique in the Space, also when archived
+        description:
+          type: string
+          maxLength: 500
+        privacy:
+          $ref: '#/components/schemas/TrackPrivacy'
+        position:
+          type: integer
+          minimum: 1
+        archived:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TrackSummary:
+      allOf:
+        - $ref: '#/components/schemas/Track'
+        - type: object
+          required: [collection_count, problem_count, progress, is_member]
+          properties:
+            collection_count:
+              type: integer
+            problem_count:
+              type: integer
+              description: Published problems that count towards progression
+            progress:
+              allOf:
+                - $ref: '#/components/schemas/Progress'
+              nullable: true
+              description: The caller's own progression; null for a visitor
+            is_member:
+              type: boolean
+              description: Added to this Track by an invitation
+    CreateTrackRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        slug:
+          type: string
+          description: Derived from the name when left out (the name must then contain latin letters or digits)
+        description:
+          type: string
+          maxLength: 500
+        privacy:
+          $ref: '#/components/schemas/TrackPrivacy'
+    UpdateTrackRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        privacy:
+          $ref: '#/components/schemas/TrackPrivacy'
+        archived:
+          type: boolean
+    ReorderTracksRequest:
+      type: object
+      required: [track_slugs]
+      properties:
+        track_slugs:
+          type: array
+          items:
+            type: string
+    SetTrackCollectionsRequest:
+      type: object
+      required: [collection_slugs]
+      properties:
+        collection_slugs:
+          type: array
+          description: Exactly the Collections the Track should have, in order
+          items:
+            type: string
+    ProblemRef:
+      type: object
+      required: [slug, title, status, my_result]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          description: Solvers only ever see `published`
+          enum: [draft, published, archived]
+        my_result:
+          type: object
+          nullable: true
+          description: The caller's own result; null for a visitor
+          required: [solved, last_verdict]
+          properties:
+            solved:
+              type: boolean
+            last_verdict:
+              type: string
+              nullable: true
+              description: Verdict of the latest finished submission, null when there is none
+    Collection:
+      type: object
+      required: [id, name, slug, description, archived, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 80
+        slug:
+          type: string
+        description:
+          type: string
+          maxLength: 500
+        archived:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CollectionSummary:
+      allOf:
+        - $ref: '#/components/schemas/Collection'
+        - type: object
+          required: [problem_count, tracks]
+          properties:
+            problem_count:
+              type: integer
+              description: Published problems for solvers, all problems for staff
+            tracks:
+              type: array
+              description: The Tracks (that the caller can reach) this Collection is in
+              items:
+                type: object
+                required: [name, slug]
+                properties:
+                  name:
+                    type: string
+                  slug:
+                    type: string
+    CollectionDetail:
+      allOf:
+        - $ref: '#/components/schemas/CollectionSummary'
+        - type: object
+          required: [space, problems, progress]
+          properties:
+            space:
+              type: object
+              required: [name, slug]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+            problems:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProblemRef'
+            progress:
+              allOf:
+                - $ref: '#/components/schemas/Progress'
+              nullable: true
+    CollectionInTrack:
+      allOf:
+        - $ref: '#/components/schemas/Collection'
+        - type: object
+          required: [problems, progress]
+          properties:
+            problems:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProblemRef'
+            progress:
+              allOf:
+                - $ref: '#/components/schemas/Progress'
+              nullable: true
+    TrackDetail:
+      allOf:
+        - $ref: '#/components/schemas/Track'
+        - type: object
+          required: [space, collections, progress, member_count]
+          properties:
+            space:
+              type: object
+              required: [name, slug]
+              properties:
+                name:
+                  type: string
+                slug:
+                  type: string
+            collections:
+              type: array
+              items:
+                $ref: '#/components/schemas/CollectionInTrack'
+            progress:
+              allOf:
+                - $ref: '#/components/schemas/Progress'
+              nullable: true
+            member_count:
+              type: integer
+              nullable: true
+              description: Only for people who manage the Track
+    CreateCollectionRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        slug:
+          type: string
+        description:
+          type: string
+          maxLength: 500
+    UpdateCollectionRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        archived:
+          type: boolean
+    SetCollectionProblemsRequest:
+      type: object
+      required: [problem_slugs]
+      properties:
+        problem_slugs:
+          type: array
+          description: Exactly the problems the Collection should have, in order
+          items:
+            type: string
+    ChangeCollectionProblemsRequest:
+      type: object
+      properties:
+        add:
+          type: array
+          items:
+            type: string
+        remove:
+          type: array
+          items:
+            type: string
+    TrackMember:
+      allOf:
+        - $ref: '#/components/schemas/PublicUser'
+        - type: object
+          required: [space_role, joined_at, added_by]
+          properties:
+            space_role:
+              type: string
+              nullable: true
+              description: Their role in the Space; a person invited to a Track is a solver
+            joined_at:
+              type: string
+              format: date-time
+            added_by:
+              $ref: '#/components/schemas/PublicUser'
+    TrackProgress:
+      type: object
+      required: [total, items]
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [user, role, is_track_member, solved]
+            properties:
+              user:
+                $ref: '#/components/schemas/PublicUser'
+              role:
+                type: string
+                nullable: true
+              is_track_member:
+                type: boolean
+              solved:
+                type: integer
+    CreateTrackInviteRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Address the invitation to one user. Omit for a link invitation.
+        expires_in_days:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 7

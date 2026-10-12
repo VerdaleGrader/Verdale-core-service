@@ -16,6 +16,8 @@ import SessionRepository from '@/repositories/session.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import UserRepository from '@/repositories/user.repository';
 import { toSessionUser, SessionUser } from '@/services/user/user.mapper';
+import CatalogRepository from '@/repositories/catalog.repository';
+import { createInitialTrack } from '@/services/catalog/track.service';
 
 export interface OAuthStart {
   authorizeUrl: string;
@@ -70,6 +72,7 @@ export default class AuthService {
     private readonly users: UserRepository,
     private readonly sessions: SessionRepository,
     private readonly spaces: SpaceRepository,
+    private readonly catalog: CatalogRepository,
     private readonly providers: OAuthProviders,
     private readonly config: AuthConfigurations,
     private readonly now: () => Date = () => new Date()
@@ -210,6 +213,7 @@ export default class AuthService {
       is_personal: true,
     });
     await this.spaces.addMember(tx, space.id, user.id, 'owner');
+    await createInitialTrack(this.catalog, tx, space.id, user.id, undefined);
     return { user, isNewUser: true };
   }
 

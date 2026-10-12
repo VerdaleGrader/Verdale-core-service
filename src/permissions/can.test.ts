@@ -70,7 +70,7 @@ function expectOnly(
 
 describe('can()', () => {
   it('covers every action in the table below', () => {
-    expect(ACTIONS).toHaveLength(16);
+    expect(ACTIONS).toHaveLength(18);
   });
 
   describe('space.view', () => {
@@ -128,10 +128,25 @@ describe('can()', () => {
   });
 
   describe('problem.view', () => {
-    it('published problems follow Space visibility', () => {
-      expectOnly('problem.view', 'public', false, WHO, { problemStatus: 'published' });
-      expectOnly('problem.view', 'public', true, WHO, { problemStatus: 'published' });
-      expectOnly('problem.view', 'private', false, MEMBERS, { problemStatus: 'published' });
+    const inTrack = { problemStatus: 'published', problemInTrack: true } as const;
+    const outsideTracks = { problemStatus: 'published', problemInTrack: false } as const;
+
+    it('published problems in a Track follow Space visibility', () => {
+      expectOnly('problem.view', 'public', false, WHO, inTrack);
+      expectOnly('problem.view', 'public', true, WHO, inTrack);
+      expectOnly('problem.view', 'private', false, MEMBERS, inTrack);
+    });
+    it('problems outside every Track the person can reach are for the staff only (GRD-81)', () => {
+      expectOnly('problem.view', 'public', false, READERS, outsideTracks);
+      expectOnly('problem.view', 'private', false, READERS, outsideTracks);
+      expectOnly('problem.view', 'public', false, READERS, { problemStatus: 'published' });
+      expectOnly('problem.view', 'public', false, READERS, { problemStatus: 'archived' });
+    });
+    it('archived problems follow the same Track rule', () => {
+      expectOnly('problem.view', 'public', false, WHO, {
+        problemStatus: 'archived',
+        problemInTrack: true,
+      });
     });
     it('drafts are for the people who can read the editor view', () => {
       expectOnly('problem.view', 'public', false, READERS, { problemStatus: 'draft' });
@@ -172,24 +187,44 @@ describe('can()', () => {
     }
   );
 
+  describe('catalog.manage and catalog.view_progress (Tracks and Collections)', () => {
+    it.each(['public', 'private'] as Visibility[])(
+      'managing is for owner, administrator and editor in a %s Space',
+      (visibility) => {
+        expectOnly('catalog.manage', visibility, false, WRITERS);
+        expectOnly('catalog.manage', visibility, true, []);
+      }
+    );
+    it.each(['public', 'private'] as Visibility[])(
+      'reading other people’s progression adds the observer in a %s Space',
+      (visibility) => {
+        expectOnly('catalog.view_progress', visibility, false, READERS);
+        expectOnly('catalog.view_progress', visibility, true, READERS);
+      }
+    );
+  });
+
   describe('submission.create', () => {
     it('public Space: any logged-in user, never a visitor', () => {
-      expectOnly('submission.create', 'public', false, [
-        'outsider',
-        'solver',
-        'observer',
-        'editor',
-        'administrator',
-        'owner',
-      ]);
+      expectOnly(
+        'submission.create',
+        'public',
+        false,
+        ['outsider', 'solver', 'observer', 'editor', 'administrator', 'owner'],
+        { problemInTrack: true }
+      );
     });
     it('private Space: members only', () => {
-      expectOnly('submission.create', 'private', false, MEMBERS);
+      expectOnly('submission.create', 'private', false, MEMBERS, { problemInTrack: true });
+    });
+    it('without a Track that reaches the problem, only the staff can submit (GRD-81)', () => {
+      expectOnly('submission.create', 'public', false, READERS, { problemInTrack: false });
+      expectOnly('submission.create', 'public', false, READERS);
     });
     it.each(['public', 'private'] as Visibility[])(
       'nobody in an archived %s Space',
       (visibility) => {
-        expectOnly('submission.create', visibility, true, []);
+        expectOnly('submission.create', visibility, true, [], { problemInTrack: true });
       }
     );
   });

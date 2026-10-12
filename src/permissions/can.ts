@@ -21,6 +21,8 @@ export const ACTIONS = [
   'problem.create',
   'problem.update',
   'problem.publish',
+  'catalog.manage',
+  'catalog.view_progress',
   'submission.create',
   'submission.view',
   'submission.view_all',
@@ -40,7 +42,13 @@ export interface SpaceFacts {
 export interface Resource {
   space: SpaceFacts;
   /** For problem.view: drafts are visible to people who can edit only. */
-  problemStatus?: 'draft' | 'published';
+  problemStatus?: 'draft' | 'published' | 'archived';
+  /**
+   * For problem.view and submission.create: is the problem reachable through a
+   * Track this person can access (GRD-81)? Callers load this fact. Staff do not
+   * need it; everybody else (solvers, other members, visitors) does.
+   */
+  problemInTrack?: boolean;
   /** For submission.view: whose submission is being read. */
   submissionAuthorId?: string;
 }
@@ -83,6 +91,13 @@ export const isReader = (role: SpaceRoleName | null) => role !== null && READERS
  * tests, reference solutions, the editor view). Owner, administrator, editor
  * and observer; only the first three can change anything.
  *
+ * Tracks (GRD-81): outside the staff (owner, administrator, editor, observer) a
+ * person sees and submits only to problems that sit in a Collection of a Track
+ * they can access. Staff see every Track, Collection and problem in the Space.
+ *
+ * catalog.manage: create and change Tracks, Collections and their members (owner,
+ * administrator, editor). catalog.view_progress: read other people's progression.
+ *
  * submission.view: your own submissions, wherever you may submit.
  * submission.view_all: everybody's submissions in the Space (GRD-93).
  */
@@ -111,7 +126,8 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
       return isMember && role !== 'owner';
     case 'problem.view':
       if (!canSee) return false;
-      return resource.problemStatus === 'draft' ? reads : true;
+      if (reads) return true;
+      return resource.problemStatus !== 'draft' && resource.problemInTrack === true;
     case 'problem.view_private':
       // Hidden tests, reference solutions, drafts. Reading stays allowed in an
       // archived Space (it is read-only, not secret).
@@ -120,10 +136,15 @@ export function can(actor: Actor, action: Action, resource: Resource): boolean {
     case 'problem.update':
     case 'problem.publish':
       return !archived && writes;
+    case 'catalog.manage':
+      return !archived && writes;
+    case 'catalog.view_progress':
+      return canSee && reads;
     case 'submission.create':
       // Logged in, may see the Space, and the Space is not archived. Solving
       // a private Space needs membership; a public one needs only an account.
-      return actor !== null && !archived && canSee;
+      // Outside the staff, the problem must be reachable through a Track.
+      return actor !== null && !archived && canSee && (reads || resource.problemInTrack === true);
     case 'submission.view': {
       if (actor === null || !canSee) return false;
       if (resource.submissionAuthorId === actor.userId) return true;

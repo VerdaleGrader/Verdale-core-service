@@ -66,6 +66,11 @@ export default class SubmissionRepository {
     await db.$queryRaw`SELECT id FROM submissions WHERE id = ${id}::uuid FOR UPDATE`;
   }
 
+  /** How many submissions this person made of this problem (any version). */
+  countByUser(db: Db, problemId: string, userId: string) {
+    return db.submission.count({ where: { problem_id: problemId, user_id: userId } });
+  }
+
   async list(db: Db, filter: { problemId: string; userId?: string; skip: number; take: number }) {
     const where: Prisma.SubmissionWhereInput = {
       problem_id: filter.problemId,

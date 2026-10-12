@@ -29,7 +29,12 @@ import SpaceController from '@/controllers/space/space.controller';
 import UserController from '@/controllers/user/user.controller';
 import { OAuthProviders } from '@/libs/oauth';
 import { SESSION_COOKIE } from '@/middleware/session';
+import CatalogRepository from '@/repositories/catalog.repository';
 import InviteRepository from '@/repositories/invite.repository';
+import CollectionService from '@/services/catalog/collection.service';
+import TrackMemberService from '@/services/catalog/track-member.service';
+import TrackService from '@/services/catalog/track.service';
+import CatalogController from '@/controllers/catalog/catalog.controller';
 import ProblemRepository from '@/repositories/problem.repository';
 import SessionRepository from '@/repositories/session.repository';
 import SolutionRepository from '@/repositories/solution.repository';
@@ -177,18 +182,20 @@ function registerApi(
   const sessionRepository = new SessionRepository();
   const spaceRepository = new SpaceRepository();
   const inviteRepository = new InviteRepository();
+  const catalogRepository = new CatalogRepository();
 
   const authService = new AuthService(
     prisma,
     userRepository,
     sessionRepository,
     spaceRepository,
+    catalogRepository,
     oauthProviders,
     auth,
     now
   );
   const userService = new UserService(prisma, userRepository, spaceRepository);
-  const spaceService = new SpaceService(prisma, spaceRepository);
+  const spaceService = new SpaceService(prisma, spaceRepository, catalogRepository);
   const memberService = new MemberService(prisma, spaceRepository, userRepository, spaceService);
   const inviteService = new InviteService(
     prisma,
@@ -196,6 +203,24 @@ function registerApi(
     spaceRepository,
     userRepository,
     spaceService,
+    catalogRepository,
+    now
+  );
+  const trackService = new TrackService(prisma, catalogRepository, spaceRepository, spaceService);
+  const collectionService = new CollectionService(
+    prisma,
+    catalogRepository,
+    spaceRepository,
+    spaceService
+  );
+  const trackMemberService = new TrackMemberService(
+    prisma,
+    catalogRepository,
+    inviteRepository,
+    spaceRepository,
+    userRepository,
+    spaceService,
+    (row) => inviteService.toDto(row),
     now
   );
 
@@ -209,6 +234,7 @@ function registerApi(
     problemRepository,
     testCaseRepository,
     solutionRepository,
+    catalogRepository,
     spaceService,
     storage.tests,
     now
@@ -242,6 +268,7 @@ function registerApi(
     testCaseRepository,
     problemRepository,
     spaceRepository,
+    catalogRepository,
     problemService,
     dispatcher,
     now
@@ -267,6 +294,11 @@ function registerApi(
   const userController = new UserController(userService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
   const inviteController = new InviteController(inviteService);
+  const catalogController = new CatalogController(
+    trackService,
+    collectionService,
+    trackMemberService
+  );
 
   // Judge's result callback. Not part of the browser API: no cookies, no CSRF
   // check, no session. The body stays raw bytes because the HMAC signature
@@ -371,6 +403,48 @@ function registerApi(
         v1.delete(
           '/spaces/:slug/invites/:inviteId',
           spaceController.revokeInvite.bind(spaceController)
+        );
+
+        // --- tracks and collections (M3) ---------------------------------------
+        const tracks = '/spaces/:slug/tracks';
+        const track = `${tracks}/:trackSlug`;
+        v1.get(tracks, catalogController.listTracks.bind(catalogController));
+        v1.post(tracks, catalogController.createTrack.bind(catalogController));
+        v1.put(`${tracks}/order`, catalogController.reorderTracks.bind(catalogController));
+        v1.get(track, catalogController.getTrack.bind(catalogController));
+        v1.patch(track, catalogController.updateTrack.bind(catalogController));
+        v1.delete(track, catalogController.archiveTrack.bind(catalogController));
+        v1.put(
+          `${track}/collections`,
+          catalogController.setTrackCollections.bind(catalogController)
+        );
+        v1.get(`${track}/progress`, catalogController.trackProgress.bind(catalogController));
+        v1.get(`${track}/members`, catalogController.listTrackMembers.bind(catalogController));
+        v1.delete(
+          `${track}/members/:username`,
+          catalogController.removeTrackMember.bind(catalogController)
+        );
+        v1.get(`${track}/invites`, catalogController.listTrackInvites.bind(catalogController));
+        v1.post(`${track}/invites`, catalogController.createTrackInvite.bind(catalogController));
+        v1.delete(
+          `${track}/invites/:inviteId`,
+          catalogController.revokeTrackInvite.bind(catalogController)
+        );
+
+        const collections = '/spaces/:slug/collections';
+        const collection = `${collections}/:collectionSlug`;
+        v1.get(collections, catalogController.listCollections.bind(catalogController));
+        v1.post(collections, catalogController.createCollection.bind(catalogController));
+        v1.get(collection, catalogController.getCollection.bind(catalogController));
+        v1.patch(collection, catalogController.updateCollection.bind(catalogController));
+        v1.delete(collection, catalogController.archiveCollection.bind(catalogController));
+        v1.put(
+          `${collection}/problems`,
+          catalogController.setCollectionProblems.bind(catalogController)
+        );
+        v1.patch(
+          `${collection}/problems`,
+          catalogController.patchCollectionProblems.bind(catalogController)
         );
 
         // --- problems (M3) ---------------------------------------------------

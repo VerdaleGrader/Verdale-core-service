@@ -83,13 +83,49 @@ export const SOLUTION_SOURCE =
 export const HIDDEN = { input: '987654321 123456789\n', output: '1111111110\n' };
 
 /**
+ * Makes a problem reachable for solvers (GRD-81): puts it in the Collection
+ * "main" and the Collection in the Space's starting Track, "general". Safe to
+ * call again for more problems.
+ */
+export async function exposeProblem(
+  client: Client,
+  space: string,
+  problem: string,
+  { collection = 'main', track = 'general' }: { collection?: string; track?: string } = {}
+) {
+  const base = `/api/v1/spaces/${space}`;
+  const made = await client.request('POST', `${base}/collections`, {
+    name: collection,
+    slug: collection,
+  });
+  if (made.status !== 201 && made.status !== 409) {
+    throw new Error(`could not create the collection: ${made.status} ${JSON.stringify(made.body)}`);
+  }
+  const added = await client.request('PATCH', `${base}/collections/${collection}/problems`, {
+    add: [problem],
+  });
+  if (added.status !== 200) {
+    throw new Error(`could not add the problem: ${added.status} ${JSON.stringify(added.body)}`);
+  }
+  const current = await client.request('GET', `${base}/tracks/${track}`);
+  const slugs = (current.body.collections as { slug: string }[]).map((item) => item.slug);
+  if (!slugs.includes(collection)) {
+    const set = await client.request('PUT', `${base}/tracks/${track}/collections`, {
+      collection_slugs: [...slugs, collection],
+    });
+    if (set.status !== 200) throw new Error(`could not set the track: ${set.status}`);
+  }
+}
+
+/**
  * A published problem: one sample ("1 2" -> "3") and one hidden test, and a
  * primary reference solution. Returns what the leak checks need.
  */
 export async function createPublishedProblem(
   cast: Cast,
   slug = 'sum',
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  { expose = true }: { expose?: boolean } = {}
 ) {
   await createDraft(cast.editor, cast.slug, slug, extra);
   const sample = await addTest(cast.editor, cast.slug, slug, '1 2\n', '3\n', true);
@@ -102,6 +138,7 @@ export async function createPublishedProblem(
   if (published.status !== 200) {
     throw new Error(`could not publish: ${published.status} ${JSON.stringify(published.body)}`);
   }
+  if (expose) await exposeProblem(cast.owner, cast.slug, slug);
   return {
     slug,
     sample: sample.body,

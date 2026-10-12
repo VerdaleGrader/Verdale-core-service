@@ -37,6 +37,7 @@ export const createSpaceBody = z.object({
   slug: z.string().trim().min(1).max(64),
   description: spaceDescription.default(''),
   visibility: visibility.default('private'),
+  track_name: z.string().trim().min(1).max(80).optional(),
 });
 
 export const updateSpaceBody = z
@@ -197,4 +198,78 @@ export const submissionListQuery = z.object({
 
 export const assetParams = z.object({
   name: z.string().regex(/^[a-f0-9]{32}\.(png|jpg|webp)$/),
+});
+
+// --- Tracks and Collections (M3: GRD-77 to GRD-82) ---------------------------
+
+const catalogName = z
+  .string()
+  .trim()
+  .min(1, 'Enter a name.')
+  .max(80, 'Use at most 80 characters.')
+  .refine(withoutNul, NUL_MESSAGE);
+const catalogDescription = z
+  .string()
+  .trim()
+  .max(500, 'Use at most 500 characters.')
+  .refine(withoutNul, NUL_MESSAGE);
+const catalogSlug = z.string().trim().min(1).max(64);
+const slugList = (max: number) => z.array(catalogSlug).max(max);
+
+export const trackParams = slugParams.extend({ trackSlug: catalogSlug });
+export const trackMemberParams = trackParams.extend({ username: z.string().min(1).max(64) });
+export const trackInviteParams = trackParams.extend({ inviteId: z.uuid() });
+export const collectionParams = slugParams.extend({ collectionSlug: catalogSlug });
+export const catalogListQuery = z.object({ include_archived: queryBoolean });
+
+const trackPrivacy = z.enum(['space', 'members']);
+
+export const createTrackBody = z.object({
+  name: catalogName,
+  slug: catalogSlug.optional(),
+  description: catalogDescription.default(''),
+  privacy: trackPrivacy.default('space'),
+});
+
+export const updateTrackBody = z
+  .object({
+    name: catalogName.optional(),
+    description: catalogDescription.optional(),
+    privacy: trackPrivacy.optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: 'Send at least one field to change.',
+  });
+
+export const reorderTracksBody = z.object({ track_slugs: slugList(200) });
+export const setTrackCollectionsBody = z.object({ collection_slugs: slugList(500) });
+
+export const createCollectionBody = z.object({
+  name: catalogName,
+  slug: catalogSlug.optional(),
+  description: catalogDescription.default(''),
+});
+
+export const updateCollectionBody = z
+  .object({
+    name: catalogName.optional(),
+    description: catalogDescription.optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: 'Send at least one field to change.',
+  });
+
+export const setCollectionProblemsBody = z.object({ problem_slugs: slugList(1000) });
+
+export const patchCollectionProblemsBody = z
+  .object({ add: slugList(1000).default([]), remove: slugList(1000).default([]) })
+  .refine((body) => body.add.length + body.remove.length > 0, {
+    message: 'Send at least one problem to add or remove.',
+  });
+
+export const createTrackInviteBody = z.object({
+  username: z.string().trim().min(1).max(64).optional(),
+  expires_in_days: z.number().int().min(1).max(30).default(7),
 });

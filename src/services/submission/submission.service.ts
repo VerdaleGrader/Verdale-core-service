@@ -10,10 +10,11 @@ import {
 import { can } from '@/permissions/can';
 import TLogger, { Layer } from '@/logging/logger';
 import ProblemRepository from '@/repositories/problem.repository';
+import CatalogRepository from '@/repositories/catalog.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import SubmissionRepository, { SubmissionRecord } from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
-import { isWriter } from '@/permissions/can';
+import { isReader, isWriter } from '@/permissions/can';
 import { isAuthor } from '@/services/problem/problem.access';
 import { currentVersionOf } from '@/services/problem/problem.mapper';
 import ProblemService from '@/services/problem/problem.service';
@@ -47,6 +48,7 @@ export default class SubmissionService {
     private readonly tests: TestCaseRepository,
     private readonly problems: ProblemRepository,
     private readonly spaces: SpaceRepository,
+    private readonly catalog: CatalogRepository,
     private readonly problemService: ProblemService,
     private readonly dispatcher: JudgeDispatcher,
     private readonly now: () => Date = () => new Date()
@@ -67,12 +69,12 @@ export default class SubmissionService {
       slug,
       problemSlug
     );
-    // 404 when the Space is hidden from the caller, 403 when it is archived.
-    assertCan(user, 'submission.create', access);
+    // 404 when the Space is hidden from the caller, or the problem is not reachable
+    // through a Track they can access (GRD-81); 403 when the Space is archived.
+    const inTrack = await this.problemService.assertVisible(user, access, problem);
+    assertCan(user, 'submission.create', access, { problemInTrack: inTrack });
 
     if (problem.status === 'draft') {
-      // Solvers must not learn that a draft exists.
-      if (!isAuthor(user, access)) throw new NotFoundError('Problem not found.');
       throw new ConflictError(
         'This problem is a draft. Publish it before submitting solutions.',
         'PROBLEM_NOT_PUBLISHED'
@@ -127,6 +129,13 @@ export default class SubmissionService {
     );
     const author = isAuthor(user, access);
     if (problem.status === 'draft' && !author) throw new NotFoundError('Problem not found.');
+    // A problem taken out of its last Track is gone for solvers, but their own history stays (GRD-81).
+    if (!author && !(await this.catalog.isProblemVisible(this.prisma, problem.id, user.id))) {
+      const hasOwn =
+        input.scope === 'mine' &&
+        (await this.submissions.countByUser(this.prisma, problem.id, user.id)) > 0;
+      if (!hasOwn) throw new NotFoundError('Problem not found.');
+    }
     if (input.scope === 'all' && !author) {
       throw new ForbiddenError("Only the Space's staff can see everyone's submissions.");
     }
@@ -180,7 +189,7 @@ export default class SubmissionService {
     if (!found) throw new NotFoundError('Submission not found.');
     const access = await this.accessTo(user, found);
     this.assertViewable(user, access, found);
-    if (!this.mayRejudge(user, access, found)) {
+    if (!(await this.mayRejudge(user, access, found))) {
       throw new ForbiddenError('You cannot ask for this submission to be checked again.');
     }
 
@@ -220,14 +229,23 @@ export default class SubmissionService {
   }
 
   /** Checking again needs the right to submit here, and being the author or someone who can edit problems. */
-  private mayRejudge(user: User, access: SpaceAccess, submission: SubmissionRecord): boolean {
+  private async mayRejudge(
+    user: User,
+    access: SpaceAccess,
+    submission: SubmissionRecord
+  ): Promise<boolean> {
     if (submission.status !== 'completed' || submission.verdict !== 'ISE') return false;
-    if (!can(actorOf(user), 'submission.create', resourceOf(access))) return false;
+    const inTrack =
+      isReader(access.role) ||
+      (await this.catalog.isProblemVisible(this.prisma, submission.problem_id, user.id));
+    if (!can(actorOf(user), 'submission.create', resourceOf(access, { problemInTrack: inTrack }))) {
+      return false;
+    }
     // An observer reads everything but changes nothing, so cannot trigger a re-judge.
     return submission.user_id === user.id || isWriter(access.role);
   }
 
-  private present(
+  private async present(
     user: User,
     submission: SubmissionRecord,
     access: SpaceAccess,
@@ -235,7 +253,7 @@ export default class SubmissionService {
   ) {
     return toSubmissionDto(submission, spaceRef(access), {
       includeSource,
-      canRejudge: this.mayRejudge(user, access, submission),
+      canRejudge: await this.mayRejudge(user, access, submission),
     });
   }
 }

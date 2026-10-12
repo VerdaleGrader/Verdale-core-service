@@ -454,6 +454,236 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/spaces/{slug}/tracks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tracks the caller can reach, in order
+     * @description Staff (owner, administrator, editor, observer) see every Track; everyone else only active Tracks open to the Space or that they joined. A private Space answers 404 to outsiders.
+     */
+    get: operations['listTracks'];
+    put?: never;
+    /** Create a Track (owner, administrator or editor) */
+    post: operations['createTrack'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/order': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set the order of all active Tracks
+     * @description Send every active Track exactly once; otherwise 409 `ORDER_OUT_OF_DATE`.
+     */
+    put: operations['reorderTracks'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A Track with its Collections, problems and the caller's progression
+     * @description A Track the caller cannot reach (members-only and not added, or archived) is 404.
+     */
+    get: operations['getTrack'];
+    put?: never;
+    post?: never;
+    /** Archive a Track */
+    delete: operations['archiveTrack'];
+    options?: never;
+    head?: never;
+    /** Edit a Track, or archive or restore it */
+    patch: operations['updateTrack'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/collections': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set the Collections of a Track and their order */
+    put: operations['setTrackCollections'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/progress': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** How far each person has got in a Track (staff only) */
+    get: operations['getTrackProgress'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Members of a Track (staff) */
+    get: operations['listTrackMembers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/members/{username}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Take a person out of a Track (they stay in the Space) */
+    delete: operations['removeTrackMember'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/invites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Pending invitations to a Track (staff) */
+    get: operations['listTrackInvites'];
+    put?: never;
+    /**
+     * Invite someone to a Track, by link or by username
+     * @description Whoever accepts joins the Space as a **solver** (if not a member yet) and the Track. The role of an existing member does not change.
+     */
+    post: operations['createTrackInvite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/tracks/{trackSlug}/invites/{inviteId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke a pending Track invitation */
+    delete: operations['revokeTrackInvite'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/collections': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Collections the caller can reach
+     * @description Staff see all of them, also those in no Track. Everyone else only Collections in a Track they can reach.
+     */
+    get: operations['listCollections'];
+    put?: never;
+    /** Create a Collection (owner, administrator or editor) */
+    post: operations['createCollection'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/collections/{collectionSlug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** A Collection with its problems and the caller's progression */
+    get: operations['getCollection'];
+    put?: never;
+    post?: never;
+    /** Archive a Collection */
+    delete: operations['archiveCollection'];
+    options?: never;
+    head?: never;
+    /** Edit a Collection, or archive or restore it */
+    patch: operations['updateCollection'];
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/collections/{collectionSlug}/problems': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set the problems of a Collection and their order
+     * @description Drafts may be added; solvers do not see them.
+     */
+    put: operations['setCollectionProblems'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Add and remove several problems at once */
+    patch: operations['changeCollectionProblems'];
+    trace?: never;
+  };
   '/api/v1/spaces/{slug}/problems': {
     parameters: {
       query?: never;
@@ -463,8 +693,10 @@ export interface paths {
     };
     /**
      * Problems of a Space
-     * @description Visitors and solvers only ever see `published` problems, whatever `status` says.
-     *     Owners and editors can also list `draft` and `archived` problems, or `all`
+     * @description Visitors and solvers only ever see `published` problems that sit in a Collection of a Track
+     *     they can reach (see Tracks), whatever `status` says. A problem outside every such Track
+     *     answers 404 to them everywhere (detail, submit), as a private Space would.
+     *     Owners, administrators, editors and observers can also list `draft` and `archived` problems, or `all`
      *     (default `published`); `mine=true` keeps the ones they created.
      *     A private Space answers 404 to everyone who is not a member.
      */
@@ -944,6 +1176,8 @@ export interface components {
        * @enum {string}
        */
       visibility: 'public' | 'private';
+      /** @description Name of the Track every Space starts with. "General" when left out. */
+      track_name?: string;
     };
     UpdateSpaceRequest: {
       name?: string;
@@ -974,6 +1208,11 @@ export interface components {
         name: string;
         slug: string;
       };
+      /** @description Set for an invitation to one Track; accepting it makes the person a solver of the Space */
+      track: {
+        name: string;
+        slug: string;
+      } | null;
       role: components['schemas']['Role'];
       /** @enum {string} */
       status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired';
@@ -996,6 +1235,11 @@ export interface components {
         name: string;
         slug: string;
       };
+      /** @description Set for an invitation to one Track; accepting it makes the person a solver of the Space */
+      track: {
+        name: string;
+        slug: string;
+      } | null;
       role: components['schemas']['Role'];
       /** @enum {string} */
       status: 'accepted' | 'declined';
@@ -1326,6 +1570,158 @@ export interface components {
       field: string;
       message: string;
     };
+    /**
+     * @description `space`: everyone who can see the Space can see the Track. `members`: only people added to the Track (staff always see every Track).
+     * @enum {string}
+     */
+    TrackPrivacy: 'space' | 'members';
+    /** @description Problems solved (at least one accepted submission, any version) out of the published problems in the non-archived Collections of the Track. A problem counts once. */
+    Progress: {
+      solved: number;
+      total: number;
+    };
+    Track: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      /** @description 2-64 chars, lower-case letters, digits, `-` or `_`; unique in the Space, also when archived */
+      slug: string;
+      description: string;
+      privacy: components['schemas']['TrackPrivacy'];
+      position: number;
+      archived: boolean;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    TrackSummary: components['schemas']['Track'] & {
+      collection_count: number;
+      /** @description Published problems that count towards progression */
+      problem_count: number;
+      /** @description The caller's own progression; null for a visitor */
+      progress: components['schemas']['Progress'] | null;
+      /** @description Added to this Track by an invitation */
+      is_member: boolean;
+    };
+    CreateTrackRequest: {
+      name: string;
+      /** @description Derived from the name when left out (the name must then contain latin letters or digits) */
+      slug?: string;
+      description?: string;
+      privacy?: components['schemas']['TrackPrivacy'];
+    };
+    UpdateTrackRequest: {
+      name?: string;
+      description?: string;
+      privacy?: components['schemas']['TrackPrivacy'];
+      archived?: boolean;
+    };
+    ReorderTracksRequest: {
+      track_slugs: string[];
+    };
+    SetTrackCollectionsRequest: {
+      /** @description Exactly the Collections the Track should have, in order */
+      collection_slugs: string[];
+    };
+    ProblemRef: {
+      slug: string;
+      title: string;
+      /**
+       * @description Solvers only ever see `published`
+       * @enum {string}
+       */
+      status: 'draft' | 'published' | 'archived';
+      /** @description The caller's own result; null for a visitor */
+      my_result: {
+        solved: boolean;
+        /** @description Verdict of the latest finished submission, null when there is none */
+        last_verdict: string | null;
+      } | null;
+    };
+    Collection: {
+      /** Format: uuid */
+      id: string;
+      name: string;
+      slug: string;
+      description: string;
+      archived: boolean;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    CollectionSummary: components['schemas']['Collection'] & {
+      /** @description Published problems for solvers, all problems for staff */
+      problem_count: number;
+      /** @description The Tracks (that the caller can reach) this Collection is in */
+      tracks: {
+        name: string;
+        slug: string;
+      }[];
+    };
+    CollectionDetail: components['schemas']['CollectionSummary'] & {
+      space: {
+        name: string;
+        slug: string;
+      };
+      problems: components['schemas']['ProblemRef'][];
+      progress: components['schemas']['Progress'] | null;
+    };
+    CollectionInTrack: components['schemas']['Collection'] & {
+      problems: components['schemas']['ProblemRef'][];
+      progress: components['schemas']['Progress'] | null;
+    };
+    TrackDetail: components['schemas']['Track'] & {
+      space: {
+        name: string;
+        slug: string;
+      };
+      collections: components['schemas']['CollectionInTrack'][];
+      progress: components['schemas']['Progress'] | null;
+      /** @description Only for people who manage the Track */
+      member_count: number | null;
+    };
+    CreateCollectionRequest: {
+      name: string;
+      slug?: string;
+      description?: string;
+    };
+    UpdateCollectionRequest: {
+      name?: string;
+      description?: string;
+      archived?: boolean;
+    };
+    SetCollectionProblemsRequest: {
+      /** @description Exactly the problems the Collection should have, in order */
+      problem_slugs: string[];
+    };
+    ChangeCollectionProblemsRequest: {
+      add?: string[];
+      remove?: string[];
+    };
+    TrackMember: components['schemas']['PublicUser'] & {
+      /** @description Their role in the Space; a person invited to a Track is a solver */
+      space_role: string | null;
+      /** Format: date-time */
+      joined_at: string;
+      added_by: components['schemas']['PublicUser'];
+    };
+    TrackProgress: {
+      total: number;
+      items: {
+        user: components['schemas']['PublicUser'];
+        role: string | null;
+        is_track_member: boolean;
+        solved: number;
+      }[];
+    };
+    CreateTrackInviteRequest: {
+      /** @description Address the invitation to one user. Omit for a link invitation. */
+      username?: string;
+      /** @default 7 */
+      expires_in_days: number;
+    };
   };
   responses: {
     /** @description Standard error response */
@@ -1345,6 +1741,12 @@ export interface components {
     Username: string;
     InviteId: string;
     InviteToken: string;
+    /** @description Track slug, unique inside its Space */
+    TrackSlug: string;
+    /** @description Collection slug, unique inside its Space */
+    CollectionSlug: string;
+    /** @description Staff only; others never see archived items */
+    IncludeArchived: boolean;
     Page: number;
     PageSize: number;
     /** @description Case-insensitive search in the Space name (public listing also matches the slug) */
@@ -2075,6 +2477,608 @@ export interface operations {
       401: components['responses']['Error'];
       404: components['responses']['Error'];
       410: components['responses']['Error'];
+    };
+  };
+  listTracks: {
+    parameters: {
+      query?: {
+        /** @description Staff only; others never see archived items */
+        include_archived?: components['parameters']['IncludeArchived'];
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Tracks, with the caller's progression */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['TrackSummary'][];
+          };
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  createTrack: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTrackRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Track'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  reorderTracks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReorderTracksRequest'];
+      };
+    };
+    responses: {
+      /** @description The Tracks in the new order */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['Track'][];
+          };
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getTrack: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Track */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrackDetail'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  archiveTrack: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archived. Problems and Collections are kept. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  updateTrack: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateTrackRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Track'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  setTrackCollections: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SetTrackCollectionsRequest'];
+      };
+    };
+    responses: {
+      /** @description The Track */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrackDetail'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  getTrackProgress: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Progression */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TrackProgress'];
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listTrackMembers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The members */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['TrackMember'][];
+          };
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  removeTrackMember: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  listTrackInvites: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The invitations */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['Invite'][];
+          };
+        };
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  createTrackInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTrackInviteRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. The token is shown once. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Invite'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  revokeTrackInvite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Track slug, unique inside its Space */
+        trackSlug: components['parameters']['TrackSlug'];
+        inviteId: components['parameters']['InviteId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  listCollections: {
+    parameters: {
+      query?: {
+        /** @description Staff only; others never see archived items */
+        include_archived?: components['parameters']['IncludeArchived'];
+      };
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Collections */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            items: components['schemas']['CollectionSummary'][];
+          };
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  createCollection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCollectionRequest'];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Collection'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  getCollection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Collection slug, unique inside its Space */
+        collectionSlug: components['parameters']['CollectionSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Collection */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CollectionDetail'];
+        };
+      };
+      404: components['responses']['Error'];
+    };
+  };
+  archiveCollection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Collection slug, unique inside its Space */
+        collectionSlug: components['parameters']['CollectionSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archived. Problems are kept. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  updateCollection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Collection slug, unique inside its Space */
+        collectionSlug: components['parameters']['CollectionSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateCollectionRequest'];
+      };
+    };
+    responses: {
+      /** @description Updated */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Collection'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  setCollectionProblems: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Collection slug, unique inside its Space */
+        collectionSlug: components['parameters']['CollectionSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SetCollectionProblemsRequest'];
+      };
+    };
+    responses: {
+      /** @description The Collection */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CollectionDetail'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  changeCollectionProblems: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Collection slug, unique inside its Space */
+        collectionSlug: components['parameters']['CollectionSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangeCollectionProblemsRequest'];
+      };
+    };
+    responses: {
+      /** @description The Collection */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CollectionDetail'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
     };
   };
   listProblems: {

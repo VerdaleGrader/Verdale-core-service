@@ -36,7 +36,9 @@ import {
   toVersionDto,
 } from '@/services/problem/problem.mapper';
 import { PublishCheck, buildPublishChecks } from '@/services/problem/publish-checks';
-import { SpaceAccess, assertCan } from '@/services/space/space.access';
+import { SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/space/space.access';
+import { can } from '@/permissions/can';
+import CatalogRepository from '@/repositories/catalog.repository';
 import SpaceService from '@/services/space/space.service';
 import { Page } from '@/services/space/space.mapper';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
@@ -108,6 +110,7 @@ export default class ProblemService {
     private readonly problems: ProblemRepository,
     private readonly tests: TestCaseRepository,
     private readonly solutions: SolutionRepository,
+    private readonly catalog: CatalogRepository,
     private readonly spaceService: SpaceService,
     private readonly testStorage: FileStorage,
     private readonly now: () => Date = () => new Date()
@@ -204,6 +207,7 @@ export default class ProblemService {
     const access = await this.spaceService.load(this.prisma, slug, user);
     assertCan(user, 'space.view', access);
     const author = isAuthor(user, access);
+    // Outside the staff only problems reachable through a Track are listed (GRD-81).
     const statuses: ProblemStatusName[] = author
       ? input.status === 'all'
         ? ['draft', 'published', 'archived']
@@ -214,6 +218,7 @@ export default class ProblemService {
       q: input.q,
       statuses,
       createdById: author && input.mine && user ? user.id : undefined,
+      visibleTo: author ? undefined : { userId: user?.id ?? null },
       skip: (input.page - 1) * input.page_size,
       take: input.page_size,
     });
@@ -228,10 +233,9 @@ export default class ProblemService {
   /** What a solver sees: the statement, limits, languages and the sample tests, nothing else. */
   async get(user: User | null, slug: string, problemSlug: string): Promise<ProblemDto> {
     const { access, problem } = await this.loadForReader(this.prisma, user, slug, problemSlug);
-    // A draft is invisible to everyone but owners and editors, who see a preview of it.
-    if (problem.status === 'draft' && !isAuthor(user, access)) {
-      throw new NotFoundError('Problem not found.');
-    }
+    // A draft is invisible to everyone but the staff, who see a preview of it. Everyone
+    // else needs the problem to be reachable through a Track they can access (GRD-81).
+    await this.assertVisible(user, access, problem);
     const version = currentVersionOf(problem);
     const samples = await this.readSamples(version.id);
     return {
@@ -250,6 +254,29 @@ export default class ProblemService {
       created_by: toPublicUser(problem.created_by),
       published_at: version.published_at?.toISOString() ?? null,
     };
+  }
+
+  /**
+   * 404 unless the caller may view this problem: staff see all of them, everybody
+   * else only published or archived ones in a Collection of a Track they can reach.
+   * Returns whether the problem is reachable through a Track, which submitting needs.
+   */
+  async assertVisible(
+    user: User | null,
+    access: SpaceAccess,
+    problem: Pick<ProblemWithVersion, 'id' | 'status'>
+  ): Promise<boolean> {
+    const staff = isAuthor(user, access);
+    const inTrack = staff
+      ? true
+      : await this.catalog.isProblemVisible(this.prisma, problem.id, user?.id ?? null);
+    const allowed = can(
+      actorOf(user),
+      'problem.view',
+      resourceOf(access, { problemStatus: problem.status, problemInTrack: inTrack })
+    );
+    if (!allowed) throw new NotFoundError('Problem not found.');
+    return inTrack;
   }
 
   /** Content of the sample tests only. Hidden tests are never read here. */

@@ -1,4 +1,5 @@
 import { Language, ProblemStatus } from '../../generated/prisma/enums';
+import { problemVisibleWhere } from '@/repositories/catalog.repository';
 import { Db, Prisma } from '@/repositories/db';
 import { PUBLIC_USER_SELECT } from '@/services/user/user.mapper';
 
@@ -9,6 +10,8 @@ export interface ProblemListFilter {
   q?: string;
   statuses: ProblemStatus[];
   createdById?: string;
+  /** Only problems this person can reach through a Track (GRD-81); staff pass nothing. */
+  visibleTo?: { userId: string | null };
   skip: number;
   take: number;
 }
@@ -118,6 +121,7 @@ export default class ProblemRepository {
       space_id: filter.spaceId,
       status: { in: filter.statuses },
       ...(filter.createdById ? { created_by_id: filter.createdById } : {}),
+      ...(filter.visibleTo ? problemVisibleWhere(filter.visibleTo.userId) : {}),
       ...(filter.q
         ? {
             OR: [
