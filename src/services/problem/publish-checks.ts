@@ -36,7 +36,9 @@ export function buildPublishChecks(facts: PublishFacts): PublishCheck[] {
       key: 'tests',
       ok: facts.testCount >= 1,
       message:
-        facts.testCount >= 1 ? `${facts.testCount} testcase(s) added.` : 'Add at least one testcase.',
+        facts.testCount >= 1
+          ? `${facts.testCount} testcase(s) added.`
+          : 'Add at least one testcase.',
     },
     {
       key: 'outputs',
