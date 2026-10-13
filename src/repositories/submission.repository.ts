@@ -3,8 +3,16 @@ import { Db, Prisma } from '@/repositories/db';
 
 const FOR_DISPLAY = {
   user: { select: { username: true, display_name: true, avatar_url: true } },
-  problem: { select: { slug: true, space_id: true, status: true } },
-  version: { select: { title: true } },
+  // `current_version` is the open version: a submission is outdated when a newer Major is open.
+  problem: {
+    select: {
+      slug: true,
+      space_id: true,
+      status: true,
+      current_version: { select: { version_number: true } },
+    },
+  },
+  version: { select: { title: true, version_number: true } },
 } as const;
 
 /** Just enough of each test to draw a progress bar: no times, no previews. */

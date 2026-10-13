@@ -14,6 +14,10 @@ export interface SubmissionSummaryDto {
   space: { name: string; slug: string };
   author: PublicUser;
   language: Language;
+  /** The Major of the problem version it was sent to; a Minor update does not change it. */
+  version_major: number;
+  /** A newer Major is open. The result stays as it was; nothing is re-judged. */
+  outdated: boolean;
   status: SubmissionStatusName;
   verdict: VerdictName | null;
   time_ms: number | null;
@@ -89,6 +93,10 @@ export function toSubmissionSummary(
     space,
     author: toPublicUser(submission.user),
     language: submission.language,
+    version_major: submission.version.version_number,
+    outdated:
+      (submission.problem.current_version?.version_number ?? submission.version.version_number) >
+      submission.version.version_number,
     status: submission.status,
     verdict: submission.verdict,
     time_ms: submission.time_ms,
