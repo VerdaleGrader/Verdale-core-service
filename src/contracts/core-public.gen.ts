@@ -977,6 +977,14 @@ export interface paths {
      * Submissions of a problem, newest first
      * @description `scope=mine` (default) lists the caller's own. `scope=all` lists everyone's and is for
      *     the staff only (owner, administrator, editor, observer; 403 for others).
+     *     Every item carries `test_runs`, the verdicts of its tests in judging order as runs, so a
+     *     progress bar can be drawn for each row without fetching the submissions one by one.
+     *     With `scope=mine` the page also carries `best`, the caller's best submission of the
+     *     problem whatever page is asked for: the most tests passed, and among equals the one sent
+     *     first. A submission that is not finished, ended in a system error (ISE) or passed no test
+     *     is never the best, so `best` is null until one passes a test. `best` also appears among
+     *     `items` on its own page; Web shows it apart. The source of any of them comes from
+     *     `GET /api/v1/submissions/{submissionId}`.
      */
     get: operations['listSubmissions'];
     put?: never;
@@ -2104,13 +2112,25 @@ export interface components {
       memory_kb: number | null;
       tests_passed: number | null;
       tests_total: number | null;
+      /**
+       * @description The verdict of each test in judging order, as runs: AC, AC, AC, WA, SKIPPED is
+       *     `[{AC, 3}, {WA, 1}, {SKIPPED, 1}]`. Empty until the submission is judged (and after a
+       *     compilation or system error, which report no test). Holds no test content.
+       */
+      test_runs: components['schemas']['TestRun'][];
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
       judged_at: string | null;
     };
+    TestRun: {
+      verdict: components['schemas']['TestVerdict'];
+      count: number;
+    };
     SubmissionPage: {
       items: components['schemas']['SubmissionSummary'][];
+      /** @description The caller's best submission of the problem; null for `scope=all` or when none passed a test */
+      best: components['schemas']['SubmissionSummary'] | null;
       page: number;
       page_size: number;
       total: number;

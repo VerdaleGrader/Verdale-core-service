@@ -375,6 +375,8 @@ model Submission {
   // "My submissions of this problem", "everyone's submissions of this problem", newest first.
   @@index([user_id, problem_id, created_at(sort: Desc)])
   @@index([problem_id, created_at(sort: Desc)])
+  // "My best submission of this problem" (GRD-113): most tests passed, then the earliest.
+  @@index([user_id, problem_id, status, tests_passed(sort: Desc), created_at(sort: Asc)])
   // Submissions made from a Track, newest first (the Space-wide pages).
   @@index([track_id, created_at(sort: Desc)])
   // The dispatcher looks for queued submissions that are due.

@@ -500,6 +500,92 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
       expect((await cast.solver.request('GET', submissionsUrl('?page_size=51'))).status).toBe(400);
     });
 
+    describe('previous submissions: test runs and the best one (GRD-113)', () => {
+      /** Sends a submission and marks it finished with the numbers given, without going through Judge. */
+      async function finished(
+        client: Cast['solver'],
+        outcome: { passed: number; verdict?: 'AC' | 'WA' | 'ISE'; status?: 'completed' | 'running' }
+      ) {
+        const { body } = await submitCode(client, cast.slug, 'sum');
+        await t.prisma.submission.update({
+          where: { id: body.id },
+          data: {
+            status: outcome.status ?? 'completed',
+            verdict:
+              (outcome.status ?? 'completed') === 'completed' ? (outcome.verdict ?? 'WA') : null,
+            tests_passed: outcome.passed,
+          },
+        });
+        return body.id as string;
+      }
+
+      it('gives every item its tests as runs, and nothing for one that is not judged', async () => {
+        const waiting = (await submitCode(cast.solver, cast.slug, 'sum')).body;
+        expect(waiting.test_runs).toEqual([]);
+        await t.settle();
+        await t.deliver(
+          jobResult(t.judge.last, {
+            verdict: 'WA',
+            tests: jobResult(t.judge.last).tests.map((test, index) => ({
+              ...test,
+              verdict: index === 0 ? ('AC' as const) : ('WA' as const),
+            })),
+            summary: { passed: 1, total: 2, time_ms: 12, memory_kb: 2048 },
+          })
+        );
+        const page = (await cast.solver.request('GET', submissionsUrl())).body;
+        expect(page.items[0].test_runs).toEqual([
+          { verdict: 'AC', count: 1 },
+          { verdict: 'WA', count: 1 },
+        ]);
+        const detail = (await cast.solver.request('GET', `/api/v1/submissions/${waiting.id}`)).body;
+        expect(detail.test_runs).toEqual(page.items[0].test_runs);
+        // Runs hold verdicts only: no time, no preview, no test content.
+        expect(JSON.stringify(page.items[0].test_runs)).not.toMatch(/stdout|input|expected/);
+      });
+
+      it('picks the most tests passed, then the earliest, and shows it apart from the list', async () => {
+        const first = await finished(cast.solver, { passed: 1 });
+        const second = await finished(cast.solver, { passed: 2, verdict: 'AC' });
+        const third = await finished(cast.solver, { passed: 2, verdict: 'AC' });
+        const page = (await cast.solver.request('GET', submissionsUrl())).body;
+        expect(page.best.id).toBe(second);
+        expect(page.best.id).not.toBe(third);
+        expect(page.items.map((item: { id: string }) => item.id)).toEqual([third, second, first]);
+        // The best stays the same on every page, even when it is not on that page.
+        const lastPage = (await cast.solver.request('GET', submissionsUrl('?page=3&page_size=1')))
+          .body;
+        expect(lastPage.items[0].id).toBe(first);
+        expect(lastPage.best.id).toBe(second);
+      });
+
+      it('never counts a submission that is unfinished, ended in ISE or passed nothing', async () => {
+        await finished(cast.solver, { passed: 2, status: 'running' });
+        await finished(cast.solver, { passed: 2, verdict: 'ISE' });
+        await finished(cast.solver, { passed: 0 });
+        expect((await cast.solver.request('GET', submissionsUrl())).body.best).toBeNull();
+        const kept = await finished(cast.solver, { passed: 1 });
+        expect((await cast.solver.request('GET', submissionsUrl())).body.best.id).toBe(kept);
+      });
+
+      it('is about the caller only: other people’s work is not their best, and scope=all has none', async () => {
+        await finished(cast.outsider, { passed: 2, verdict: 'AC' });
+        expect((await cast.solver.request('GET', submissionsUrl())).body.best).toBeNull();
+        const own = await finished(cast.solver, { passed: 1 });
+        expect((await cast.solver.request('GET', submissionsUrl())).body.best.id).toBe(own);
+        const all = (await cast.editor.request('GET', submissionsUrl('?scope=all'))).body;
+        expect(all.best).toBeNull();
+      });
+
+      it('has the index the best query reads', async () => {
+        const indexes = await t.prisma.$queryRaw<Array<{ indexdef: string }>>`
+          SELECT indexdef FROM pg_indexes WHERE tablename = 'submissions'`;
+        expect(indexes.map((index) => index.indexdef).join('\n')).toMatch(
+          /\(user_id, problem_id, status, tests_passed DESC, created_at\)/
+        );
+      });
+    });
+
     it('owners and editors can list everyone’s; solvers cannot ask for it', async () => {
       await submitCode(cast.solver, cast.slug, 'sum');
       await submitCode(cast.outsider, cast.slug, 'sum');
