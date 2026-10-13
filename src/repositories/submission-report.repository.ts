@@ -303,7 +303,11 @@ export default class SubmissionReportRepository {
   /** Language and version choices that exist in a problem's or Space's submissions, for the filters. */
   async versionsOf(db: Db, spaceId: string, problemSlug?: string) {
     const rows = await db.problemVersion.findMany({
-      where: { problem: { space_id: spaceId, ...(problemSlug ? { slug: problemSlug } : {}) } },
+      // Published versions only: a Major draft (or one under verification) has no submissions.
+      where: {
+        status: 'published',
+        problem: { space_id: spaceId, ...(problemSlug ? { slug: problemSlug } : {}) },
+      },
       select: { version_number: true },
       distinct: ['version_number'],
       orderBy: { version_number: 'desc' },

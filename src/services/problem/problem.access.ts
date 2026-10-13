@@ -41,13 +41,30 @@ export function versionPublishedError(): ConflictError {
   return new ConflictError(VERSION_PUBLISHED_MESSAGE, 'VERSION_PUBLISHED');
 }
 
-/** The draft can be edited; a published version, or any version of an archived problem, cannot. */
+export type VersionStatusName = 'draft' | 'verifying' | 'verified' | 'published';
+
+/** A draft or verified version can be edited; a verifying or published one cannot. */
+export const isEditableStatus = (status: VersionStatusName) =>
+  status === 'draft' || status === 'verified';
+
+export function verifyInProgressError(): ConflictError {
+  return new ConflictError(
+    'A verification is running. Wait for it to finish before changing the problem.',
+    'VERIFY_IN_PROGRESS'
+  );
+}
+
+/**
+ * The version in progress (draft or verified) can be edited; a published version, a version
+ * under verification, or any version of an archived problem, cannot.
+ */
 export function assertDraftEditable(
   problem: Pick<ProblemWithVersion, 'status'>,
-  version: { status: 'draft' | 'published' } | null
+  version: { status: VersionStatusName } | null
 ): void {
   if (problem.status === 'archived') {
     throw new ConflictError('This problem is archived and cannot be changed.', 'PROBLEM_ARCHIVED');
   }
-  if (!version || version.status !== 'draft') throw versionPublishedError();
+  if (!version || version.status === 'published') throw versionPublishedError();
+  if (version.status === 'verifying') throw verifyInProgressError();
 }

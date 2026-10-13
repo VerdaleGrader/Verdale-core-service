@@ -13,8 +13,10 @@ import {
   TIME_LIMIT_MS,
   TITLE_MAX_LENGTH,
 } from '@/constants/limits';
+import { versionFields } from '@/constants/version-fields';
 import { InternalServerError } from '@/errors';
 import type { ProblemWithVersion } from '@/repositories/problem.repository';
+import { versionLabel } from '@/services/problem/version-classifier';
 import { PublicUser, toPublicUser } from '@/services/user/user.mapper';
 
 export type Language = 'c' | 'cpp' | 'python';
@@ -31,6 +33,9 @@ export interface ProblemConstraintsDto {
   solutions: { max_count: number };
   source_max_bytes: number;
   pdf: { max_bytes: number; max_pages: number };
+  /** Which fields are Major and which Minor (GRD-116); defined once in src/constants/version-fields.ts. */
+  version_fields: { major: string[]; minor: string[] };
+  publish: { min_hidden_tests: number };
 }
 
 export type TestLimitsDto = {
@@ -45,7 +50,7 @@ export function testLimits(): TestLimitsDto {
   return { ...TEST_LIMITS };
 }
 
-export function constraints(): ProblemConstraintsDto {
+export function constraints(minHiddenTests: number): ProblemConstraintsDto {
   return {
     title_max_length: TITLE_MAX_LENGTH,
     statement_max_length: STATEMENT_MAX_LENGTH,
@@ -57,6 +62,8 @@ export function constraints(): ProblemConstraintsDto {
     solutions: { max_count: SOLUTIONS_MAX_COUNT },
     source_max_bytes: SOURCE_MAX_BYTES,
     pdf: { max_bytes: PDF_MAX_BYTES, max_pages: PDF_MAX_PAGES },
+    version_fields: versionFields(),
+    publish: { min_hidden_tests: minHiddenTests },
   };
 }
 
@@ -66,6 +73,8 @@ export interface ProblemSummaryDto {
   title: string;
   status: ProblemStatusName;
   version_number: number;
+  version_minor: number;
+  version_label: string;
   time_limit_ms: number;
   memory_limit_kb: number;
   allowed_languages: Language[];
@@ -91,6 +100,8 @@ export function toProblemSummary(problem: ProblemWithVersion): ProblemSummaryDto
     title: version.title,
     status: problem.status,
     version_number: version.version_number,
+    version_minor: version.minor,
+    version_label: versionLabel(version.version_number, version.minor),
     time_limit_ms: version.time_limit_ms,
     memory_limit_kb: version.memory_limit_kb,
     allowed_languages: version.allowed_languages,
@@ -128,7 +139,10 @@ export function toPdfStatement(version: ProblemVersion): PdfStatementDto | null 
 export interface ProblemVersionDto {
   id: string;
   number: number;
-  status: 'draft' | 'published';
+  major: number;
+  minor: number;
+  label: string;
+  status: 'draft' | 'verifying' | 'verified' | 'published';
   title: string;
   statement: string;
   statement_mode: StatementModeName;
@@ -145,6 +159,9 @@ export function toVersionDto(version: ProblemVersion): ProblemVersionDto {
   return {
     id: version.id,
     number: version.version_number,
+    major: version.version_number,
+    minor: version.minor,
+    label: versionLabel(version.version_number, version.minor),
     status: version.status,
     title: version.title,
     statement: version.statement,

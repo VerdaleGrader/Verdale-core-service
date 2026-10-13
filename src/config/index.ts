@@ -55,6 +55,10 @@ const schema = z
     STORAGE_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(10_000),
     STORAGE_RETRY_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     STORAGE_RETRY_BACKOFF_MS: z.coerce.number().int().min(0).max(10_000).default(200),
+    // --- Publish gate (M4) --------------------------------------------------
+    // Hidden (not Visible to solvers) testcases a version needs before it can be
+    // published (GRD-52). 0 turns the rule off.
+    PUBLISH_MIN_HIDDEN_TESTS: z.coerce.number().int().min(0).max(100).default(1),
     // --- Judge (M3) ---------------------------------------------------------
     JUDGE_URL: z.url().default('http://localhost:8081'),
     // Core signs jobs with this key (Judge's VERDALE_JUDGE_AUTH_INBOUND_KEYS).
@@ -153,6 +157,7 @@ export interface Configurations {
   auth: AuthConfigurations;
   storage: StorageConfigurations;
   judge: JudgeConfigurations;
+  publish: { minHiddenTests: number };
 }
 
 export interface StorageConfigurations {
@@ -287,5 +292,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Configurations {
       callbackKeys: value.JUDGE_CALLBACK_KEYS ? parseKeyring(value.JUDGE_CALLBACK_KEYS) : {},
       callbackUrl: `${value.CORE_INTERNAL_URL.replace(/\/$/, '')}/internal/judge/result`,
     },
+    publish: { minHiddenTests: value.PUBLISH_MIN_HIDDEN_TESTS },
   };
 }

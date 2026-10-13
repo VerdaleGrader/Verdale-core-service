@@ -86,7 +86,7 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
           where: { id: row.problem_version_id },
           data: { time_limit_ms: 2000 },
         })
-      ).rejects.toThrow(/cannot be changed/);
+      ).rejects.toThrow(/cannot change its Major fields/);
     });
   });
 

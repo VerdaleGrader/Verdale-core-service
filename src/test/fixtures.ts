@@ -1,4 +1,4 @@
-import { Client, TestApp } from '@/test/harness';
+import { Client, TestApp, jobResult } from '@/test/harness';
 
 /** A Space with one user of every kind, for permission tests. */
 export interface Cast {
@@ -9,6 +9,8 @@ export interface Cast {
   outsider: Client;
   visitor: Client;
   slug: string;
+  /** The app under test, for helpers that need Judge (verify before publish). */
+  app: TestApp;
 }
 
 export async function castSpace(
@@ -35,7 +37,7 @@ export async function castSpace(
     const accepted = await client.request('POST', `/api/v1/invites/${invite.body.token}/accept`);
     if (accepted.status !== 200) throw new Error(`could not add the ${role}: ${accepted.status}`);
   }
-  return { owner, editor, solver, outsider, visitor: t.anonymous(), slug };
+  return { owner, editor, solver, outsider, visitor: t.anonymous(), slug, app: t };
 }
 
 /** A new account that joins the Space with the given role, by invitation from the owner. */
@@ -135,6 +137,30 @@ export async function placeInTrack(
 }
 
 /**
+ * Verifies the draft the way the web app does: asks for it, lets the fake Judge accept the
+ * job and answers it with a result where every test is AC (or what `override` says).
+ */
+export async function verifyDraft(
+  cast: Cast,
+  slug: string,
+  override: Parameters<typeof jobResult>[1] = {}
+) {
+  const started = await cast.editor.request('POST', problemUrl(cast.slug, slug, '/verify'));
+  if (started.status !== 202) {
+    throw new Error(`could not verify: ${started.status} ${JSON.stringify(started.body)}`);
+  }
+  await cast.app.settle();
+  const job = cast.app.judge.last;
+  // The verify job is not what the test is about: take it off the fake Judge's list.
+  cast.app.judge.jobs = cast.app.judge.jobs.filter((candidate) => candidate !== job);
+  const delivered = await cast.app.deliver(jobResult(job, { kind: 'verify', ...override }));
+  if (delivered.status !== 204) {
+    throw new Error(`verify result refused: ${delivered.status} ${JSON.stringify(delivered.body)}`);
+  }
+  return started.body;
+}
+
+/**
  * A published problem: one sample ("1 2" -> "3") and one hidden test, and a
  * primary reference solution. Returns what the leak checks need.
  */
@@ -151,6 +177,7 @@ export async function createPublishedProblem(
     language: 'cpp',
     source: SOLUTION_SOURCE,
   });
+  await verifyDraft(cast, slug);
   const published = await cast.editor.request('POST', problemUrl(cast.slug, slug, '/publish'));
   if (published.status !== 200) {
     throw new Error(`could not publish: ${published.status} ${JSON.stringify(published.body)}`);

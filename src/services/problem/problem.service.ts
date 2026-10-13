@@ -14,16 +14,26 @@ import {
 } from '@/libs/storage/file-storage';
 import TLogger, { Layer } from '@/logging/logger';
 import { Db, isCheckViolation, isUniqueViolation } from '@/repositories/db';
+import type { ProblemVersion } from '../../../generated/prisma/client';
+import type { ProblemVersionStatus } from '../../../generated/prisma/enums';
 import ProblemRepository, { ProblemWithVersion } from '@/repositories/problem.repository';
 import SolutionRepository from '@/repositories/solution.repository';
 import TrackRepository from '@/repositories/track.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import HistoryRepository from '@/repositories/history.repository';
+import VerificationRepository from '@/repositories/verification.repository';
+import { MAJOR_FIELDS } from '@/constants/version-fields';
 import {
   assertDraftEditable,
   assertAuthor,
   isAuthor,
+  isEditableStatus,
   versionPublishedError,
 } from '@/services/problem/problem.access';
+import { contentHash } from '@/services/problem/content-hash';
+import { assertTransition } from '@/services/problem/transitions';
+import { versionLabel } from '@/services/problem/version-classifier';
+import { VerificationRunDto, toVerificationRun } from '@/services/problem/verification.mapper';
 import {
   Language,
   ProblemConstraintsDto,
@@ -81,6 +91,8 @@ export interface ProblemDto {
   statement_mode: StatementModeName;
   statement_pdf: { url: string; pages: number; size_bytes: number } | null;
   version_number: number;
+  version_minor: number;
+  version_label: string;
   time_limit_ms: number;
   memory_limit_kb: number;
   allowed_languages: Language[];
@@ -96,6 +108,10 @@ export interface ProblemEditorDto {
   status: ProblemStatusName;
   space: { name: string; slug: string };
   version: ProblemVersionDto;
+  /** The published version solvers use; null while the problem was never published. */
+  open_version: ProblemVersionDto | null;
+  /** The latest verification run of `version` while it is a draft, verifying or verified version. */
+  verification: VerificationRunDto | null;
   editable: boolean;
   created_by: PublicUser;
   created_at: string;
@@ -118,8 +134,16 @@ export default class ProblemService {
     private readonly spaceService: SpaceService,
     private readonly testStorage: FileStorage,
     private readonly tracks: TrackRepository,
+    private readonly verifications: VerificationRepository,
+    private readonly history: HistoryRepository,
+    private readonly publishOptions: { minHiddenTests: number },
     private readonly now: () => Date = () => new Date()
   ) {}
+
+  /** What the editor needs to know about the rules (also served before any problem exists). */
+  constraints(): ProblemConstraintsDto {
+    return constraints(this.publishOptions.minHiddenTests);
+  }
 
   // --- shared lookups -----------------------------------------------------
 
@@ -193,20 +217,41 @@ export default class ProblemService {
     return (await this.problems.findDraftVersion(db, problem.id)) ?? currentVersionOf(problem);
   }
 
-  async editorView(
-    db: Db,
-    problem: ProblemWithVersion,
-    access: SpaceAccess
-  ): Promise<ProblemEditorDto> {
-    const version = await this.editorVersion(db, problem);
-    const [testStats, solutionStats] = await Promise.all([
+  /** The hash of what a verification run is bound to, for the version as it is now. */
+  async contentHashOf(db: Db, version: ProblemVersion): Promise<string> {
+    const [tests, solutions] = await Promise.all([
+      this.tests.listByVersion(db, version.id),
+      this.solutions.list(db, version.id),
+    ]);
+    return contentHash({
+      tests,
+      solutions,
+      time_limit_ms: version.time_limit_ms,
+      memory_limit_kb: version.memory_limit_kb,
+      allowed_languages: version.allowed_languages,
+    });
+  }
+
+  /** The publish checks of a version, `verified` included (GRD-52). */
+  async checksFor(db: Db, version: ProblemVersion) {
+    const [testStats, solutionStats, latest, hash] = await Promise.all([
       this.tests.stats(db, version.id),
       this.solutions.stats(db, version.id),
+      this.verifications.latestFor(db, version.id),
+      this.contentHashOf(db, version),
     ]);
-    const editable =
-      version.status === 'draft' &&
-      problem.status !== 'archived' &&
-      access.space.archived_at === null;
+    const passed = latest?.status === 'passed';
+    const valid = passed && latest.content_hash === hash;
+    const verified = valid && (version.status === 'verified' || version.status === 'published');
+    let verifiedHint: string | undefined;
+    if (version.status === 'verifying') {
+      verifiedHint = 'The verification is running. Wait for it to finish.';
+    } else if (latest && !passed && latest.status !== 'queued' && latest.status !== 'running') {
+      verifiedHint = `The last verification did not pass${latest.reason ? `: ${latest.reason}` : ''}. Fix it and run the verification again.`;
+    } else if (passed && !valid) {
+      verifiedHint =
+        'The tests, reference solutions, limits or languages changed since the last verification. Run it again.';
+    }
     const checks = buildPublishChecks({
       statement: version.statement,
       statementMode: version.statement_mode,
@@ -216,13 +261,38 @@ export default class ProblemService {
       sampleCount: testStats.sample_count,
       missingOutputCount: testStats.missing_output_count,
       hasPrimarySolution: solutionStats.has_primary,
+      timeLimitMs: version.time_limit_ms,
+      memoryLimitKb: version.memory_limit_kb,
+      minHiddenTests: this.publishOptions.minHiddenTests,
+      verified,
+      verifiedHint,
     });
+    return { checks, testStats, solutionStats, latest, hash };
+  }
+
+  async editorView(
+    db: Db,
+    problem: ProblemWithVersion,
+    access: SpaceAccess
+  ): Promise<ProblemEditorDto> {
+    const version = await this.editorVersion(db, problem);
+    const { checks, testStats, solutionStats, latest, hash } = await this.checksFor(db, version);
+    const editable =
+      isEditableStatus(version.status) &&
+      problem.status !== 'archived' &&
+      access.space.archived_at === null;
+    const inProgress = version.status !== 'published';
     return {
       id: problem.id,
       slug: problem.slug,
       status: problem.status,
       space: { name: access.space.name, slug: access.space.slug },
       version: toVersionDto(version),
+      open_version:
+        problem.status === 'draft' || !problem.current_version
+          ? null
+          : toVersionDto(problem.current_version),
+      verification: inProgress && latest ? toVerificationRun(latest, hash) : null,
       editable,
       created_by: toPublicUser(problem.created_by),
       created_at: problem.created_at.toISOString(),
@@ -230,9 +300,59 @@ export default class ProblemService {
       tests: testStats,
       solutions: solutionStats,
       publish_checks: checks,
-      can_publish: editable && checks.every((check) => check.ok),
-      constraints: constraints(),
+      can_publish: editable && version.status === 'verified' && checks.every((check) => check.ok),
+      constraints: this.constraints(),
     };
+  }
+
+  /** Writes a state change of a version into the history (who, when, from, to). */
+  async recordState(
+    db: Db,
+    input: {
+      problemId: string;
+      version: Pick<ProblemVersion, 'id' | 'version_number' | 'minor'>;
+      from: ProblemVersionStatus | null;
+      to: ProblemVersionStatus | null;
+      actorId: string;
+    }
+  ) {
+    await this.history.add(db, {
+      problem_id: input.problemId,
+      problem_version_id: input.version.id,
+      type: 'state_change',
+      actor_id: input.actorId,
+      at: this.now(),
+      label: versionLabel(input.version.version_number, input.version.minor),
+      state_from: input.from,
+      state_to: input.to,
+    });
+  }
+
+  /**
+   * Called inside the transaction of every edit of tests, reference solutions, limits or
+   * languages (GRD-50): when the content no longer matches what the last passing run was
+   * started with, the `verified` version goes back to `draft` and the old report is no
+   * longer valid. Edits while `verifying` never get this far (they are refused).
+   */
+  async invalidateVerification(db: Db, problemId: string, actorId: string): Promise<void> {
+    const draft = await this.problems.findDraftVersion(db, problemId);
+    if (!draft || draft.status !== 'verified') return;
+    const latest = await this.verifications.latestFor(db, draft.id);
+    if (
+      latest?.status === 'passed' &&
+      latest.content_hash === (await this.contentHashOf(db, draft))
+    ) {
+      return;
+    }
+    assertTransition('verified', 'draft');
+    await this.problems.setVersionStatus(db, draft.id, 'draft');
+    await this.recordState(db, {
+      problemId,
+      version: draft,
+      from: 'verified',
+      to: 'draft',
+      actorId,
+    });
   }
 
   // --- reading ------------------------------------------------------------
@@ -301,6 +421,8 @@ export default class ProblemService {
             }
           : null,
       version_number: version.version_number,
+      version_minor: version.minor,
+      version_label: versionLabel(version.version_number, version.minor),
       time_limit_ms: version.time_limit_ms,
       memory_limit_kb: version.memory_limit_kb,
       allowed_languages: version.allowed_languages,
@@ -425,6 +547,16 @@ export default class ProblemService {
         await this.problems.lock(tx, found.id);
         const fresh = (await this.problems.findById(tx, found.id))!;
         const draft = await this.problems.findDraftVersion(tx, fresh.id);
+        if (!draft && fresh.status === 'published') {
+          // The open version is published: its Major fields change only through a Major update.
+          const locked = MAJOR_FIELDS.filter((field) => field in input);
+          if (locked.length > 0) {
+            throw new ConflictError(
+              `${locked.join(', ')} cannot be changed on a published version. Start a Major update (POST .../updates or .../draft) instead.`,
+              'MAJOR_FIELD_LOCKED'
+            );
+          }
+        }
         assertDraftEditable(fresh, draft);
         if (input.statement_mode === 'pdf' && draft!.statement_pdf_sha256 === null) {
           throw new ValidationError([
@@ -436,6 +568,8 @@ export default class ProblemService {
           allowed_languages: input.allowed_languages as Language[] | undefined,
         });
         await this.problems.touch(tx, fresh.id);
+        // Limits and languages are part of what a verification covers.
+        await this.invalidateVerification(tx, fresh.id, user.id);
         return (await this.problems.findById(tx, fresh.id))!;
       });
       logger.info({
@@ -486,8 +620,10 @@ export default class ProblemService {
   }
 
   /**
-   * Makes the draft the published, immutable version. Provisional: Milestone 4
-   * puts the Judge verification run in front of this (GRD-50 to GRD-52).
+   * Makes the verified version the published one (GRD-52). The first publish is v1.0; a Major
+   * draft becomes the open version (`current_version_id`) and the old one stays as an
+   * immutable row, still the version its submissions were sent to. Every check must be ok,
+   * `verified` included; the answer names each one that is not.
    */
   async publish(user: User, slug: string, problemSlug: string, requestId: string) {
     const logger = this.logger.setContext('service.problem.publish', requestId);
@@ -503,38 +639,42 @@ export default class ProblemService {
       const fresh = (await this.problems.findById(tx, found.id))!;
       const draft = await this.problems.findDraftVersion(tx, fresh.id);
       assertDraftEditable(fresh, draft);
-      const [testStats, solutionStats] = await Promise.all([
-        this.tests.stats(tx, draft!.id),
-        this.solutions.stats(tx, draft!.id),
-      ]);
-      const checks = buildPublishChecks({
-        statement: draft!.statement,
-        statementMode: draft!.statement_mode,
-        hasPdf: draft!.statement_pdf_sha256 !== null,
-        languageCount: draft!.allowed_languages.length,
-        testCount: testStats.count,
-        sampleCount: testStats.sample_count,
-        missingOutputCount: testStats.missing_output_count,
-        hasPrimarySolution: solutionStats.has_primary,
-      });
+      const { checks } = await this.checksFor(tx, draft!);
       const failed = checks.filter((check) => !check.ok);
-      if (failed.length > 0) {
+      if (failed.length > 0 || draft!.status !== 'verified') {
         throw new ConflictError(
-          'The problem is not ready to publish.',
+          failed.length > 0
+            ? `The problem is not ready to publish: ${failed.map((check) => check.key).join(', ')}.`
+            : 'The problem is not ready to publish: run the verification first.',
           'PUBLISH_BLOCKED',
           failed.map((check) => ({ field: check.key, message: check.message }))
         );
       }
+      assertTransition('verified', 'published');
       await this.problems.markVersionPublished(tx, draft!.id, this.now());
       await this.problems.update(tx, fresh.id, {
         status: 'published',
         current_version_id: draft!.id,
       });
+      await this.recordState(tx, {
+        problemId: fresh.id,
+        version: draft!,
+        from: 'verified',
+        to: 'published',
+        actorId: user.id,
+      });
       return (await this.problems.findById(tx, fresh.id))!;
     });
     logger.info({
       message: 'problem published',
-      data: { problemId: problem.id, versionId: problem.current_version_id },
+      data: {
+        problemId: problem.id,
+        versionId: problem.current_version_id,
+        label: versionLabel(
+          problem.current_version!.version_number,
+          problem.current_version!.minor
+        ),
+      },
     });
     return this.editorView(this.prisma, problem, access);
   }
@@ -559,6 +699,16 @@ export default class ProblemService {
         );
       }
       await this.problems.update(tx, fresh.id, { status: 'archived', archived_at: this.now() });
+      assertTransition('published', 'archived');
+      if (fresh.current_version) {
+        await this.recordState(tx, {
+          problemId: fresh.id,
+          version: fresh.current_version,
+          from: 'published',
+          to: null,
+          actorId: user.id,
+        });
+      }
       return (await this.problems.findById(tx, fresh.id))!;
     });
     logger.info({ message: 'problem archived', data: { problemId: problem.id } });

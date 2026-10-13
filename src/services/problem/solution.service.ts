@@ -101,6 +101,7 @@ export default class SolutionService {
           is_primary: primary,
         });
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return row;
       });
       logger.info({
@@ -146,6 +147,7 @@ export default class SolutionService {
           ...(input.is_primary !== undefined ? { is_primary: input.is_primary } : {}),
         });
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return row;
       });
       logger.info({ message: 'reference solution updated', data: { solutionId } });
@@ -178,6 +180,7 @@ export default class SolutionService {
         if (!existing) throw new NotFoundError('Reference solution not found.');
         await this.solutions.delete(tx, solutionId);
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
       });
     } catch (error) {
       if (isCheckViolation(error)) throw versionPublishedError();

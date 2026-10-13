@@ -34,6 +34,7 @@ async function main() {
       storage: createStorages(config.storage),
       judge: { client: new HttpJudgeClient(config.judge), config: config.judge },
       publicAssetBaseUrl: config.storage.publicAssetBaseUrl,
+      publish: config.publish,
     },
   });
   if (!config.judge.signing) {

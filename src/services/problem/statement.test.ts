@@ -289,12 +289,14 @@ describeDb('PDF statements (GRD-73)', () => {
       await cast.editor.upload('PUT', draftUrl, [
         { name: 'file', filename: 'a.pdf', content: bytes },
       ]);
-      const { addTest, SOLUTION_SOURCE } = await import('@/test/fixtures');
+      const { addTest, SOLUTION_SOURCE, verifyDraft } = await import('@/test/fixtures');
       await addTest(cast.editor, 'team', 'pdfp', '1 2\n', '3\n', true);
+      await addTest(cast.editor, 'team', 'pdfp', '4 5\n', '9\n', false);
       await cast.editor.request('POST', problemUrl('team', 'pdfp', '/solutions'), {
         language: 'cpp',
         source: SOLUTION_SOURCE,
       });
+      await verifyDraft(cast, 'pdfp');
       const published = await cast.editor.request('POST', problemUrl('team', 'pdfp', '/publish'));
       expect(published.status).toBe(200);
 

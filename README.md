@@ -4,7 +4,7 @@ Core owns accounts, Spaces and permissions, problems, tests, submissions and the
 
 Stack: Node 22, TypeScript, Fastify 5, Prisma 7 (Neon Postgres), Zod, Cloudflare R2 (S3 API), winston → Better Stack, Jest.
 
-> Status: M1 gave the service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma and the API contracts. M2 adds OAuth sign-in and sessions, usernames, Spaces, members, invitations and the permission engine (see [docs/auth.md](docs/auth.md)). M3 adds problems with versions, tests, reference solutions, statement pictures, submissions and the signed Judge callback (see [docs/problems.md](docs/problems.md)). Tracks and Collections decide which problems solvers can reach, with member invitations, progression and PDF statements (see [docs/tracks.md](docs/tracks.md)). The Judge verification run and the real publish gate come in M4.
+> Status: M1 gave the service skeleton (config, health/readiness, logging, error format, graceful shutdown), Prisma and the API contracts. M2 adds OAuth sign-in and sessions, usernames, Spaces, members, invitations and the permission engine (see [docs/auth.md](docs/auth.md)). M3 adds problems with versions, tests, reference solutions, statement pictures, submissions and the signed Judge callback (see [docs/problems.md](docs/problems.md)). Tracks and Collections decide which problems solvers can reach, with member invitations, progression and PDF statements (see [docs/tracks.md](docs/tracks.md)). M4 adds the publish gate: verification on Judge, `vMajor.Minor` versions, Minor and Major updates and the version history (see [docs/problems.md](docs/problems.md)).
 
 ## Run it
 

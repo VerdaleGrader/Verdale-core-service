@@ -11,14 +11,47 @@ space ─< problem ─< problem_version ─< test_case          (files in the pr
 ```
 
 - **problem**: belongs to a Space; slug unique inside the Space (`/spaces/<space>/problems/<slug>`); status `draft` (never published), `published`, or `archived`; `current_version_id` is the version solvers see.
-- **problem_version**: title, Markdown statement, time limit, memory limit, allowed languages, status `draft` or `published`. A problem has at most one draft version at a time (partial unique index). M3 creates version 1 with the problem; creating the next draft from a published version arrives with the publish gate (M4).
+- **problem_version**: title, Markdown statement, time limit, memory limit, allowed languages, status `draft`, `verifying`, `verified` or `published`, and its number `vMajor.Minor` (`version_number` is the Major, `minor` the Minor; the first publish is v1.0). A problem has at most one version in progress (draft, verifying or verified; partial unique index) next to its published ones. Older Majors stay as immutable rows; `current_version_id` is the open one.
+- **verification_run**: one run of the primary reference solution against every test on Judge (see "The publish gate"). **problem_history**: Minor updates, Major drafts and every state change, with who and when.
 - **test_case**: position (judging order), SHA-256 and size of the input and output, `is_sample`. The files themselves are in the private bucket at `tests/<sha256>`, the same key Judge reads.
 - **reference_solution**: language, source, `is_primary` (at most one per version).
 - **submission**: who, which exact version, language, source (kept in Postgres, at most 64 KiB), `status` (`queued`, `running`, `completed`), `verdict` (set exactly when completed), time and memory (maximum over the tests that ran), the current Judge job id. **submission_test_result**: one row per reported test; previews exist for sample tests only.
 
-### A published version never changes
+### A published version's Major fields never change
 
-The service refuses first (409 `VERSION_PUBLISHED`, or `PROBLEM_ARCHIVED`); a trigger in the database refuses everything that gets past it: updating a published version, adding, changing or deleting its tests and solutions, and deleting it (which also stops a cascade from deleting its problem). `src/services/problem/problem.test.ts` tests both layers. A submission points at the exact version it was judged against, so editing a problem later (a new version, M4) can never change an old result.
+The service refuses first (409 `VERSION_PUBLISHED`, `MAJOR_FIELD_LOCKED`, or `PROBLEM_ARCHIVED`); a trigger in the database refuses everything that gets past it: changing the **Major fields** of a published version (time and memory limit, allowed languages, version number, status, `published_at`), lowering its `minor`, adding, changing or deleting its tests and solutions, and deleting it (which also stops a cascade from deleting its problem). Its **Minor fields** (title, statement, statement mode and PDF) and its `minor` number can change, and only a Minor update does that. Two more triggers keep the numbers honest: a new version needs a higher Major than every version the problem has, and the open version (`current_version_id`) can only move to a higher Major. `src/services/problem/publish-gate.test.ts` and `problem.test.ts` test the layers. A submission points at the exact version (Major) it was sent to, so a later Major can never change an old result.
+
+## The publish gate (GRD-50 to GRD-52)
+
+States of a version, in one table with the permission of each move (`src/services/problem/transitions.ts`, unit-tested):
+
+```
+draft ──verify──> verifying ──all AC──> verified ──publish──> published ──archive──> archived
+  ^                   │                    │
+  └── failed/error ───┘                    │
+  ^                                        │
+  └──── tests, solutions, limits or languages changed ────┘
+```
+
+Publish is for owners, administrators and editors (`problem.publish`); observers only read. Every move is written to `problem_history` (who, when, from, to).
+
+**Verify** (`POST …/verify`, 202; poll `GET …/verify`): the cheap checks (statement, languages, limits, tests, hidden tests, outputs, sample, solution) must be ok, else 409 `VERIFY_BLOCKED` with a detail per check; 409 `VERIFY_IN_PROGRESS` while a run is open. A `verification_run` is created (`queued`), the version becomes `verifying`, and one Judge job of kind `verify` is sent (the primary reference solution and **every** test, hidden ones included) built by the same code and limits as a submission job (`src/services/judge/job-builder.ts`). The hand-over uses the dispatcher's loop: retry with backoff while Judge is down, and a **deadline** (5 to 30 minutes, from the number of tests and the time limit) after which the run is closed as `error` ("Judge did not answer in time") and the version goes back to `draft`, so nothing sticks in `verifying`. The result arrives at the same signed callback, routed by job id, applied once (a duplicate is acknowledged): it passes only if every test is AC; otherwise `failed` with a reason like "Test 4 is WA" or the compile error; a Judge system error is `error`. Per-test verdict, time and memory and the slowest/peak figures are stored. Passed: version `verified`; else `draft`.
+
+**The run is bound to a content hash** (`content-hash.ts`): SHA-256 over the ordered test input/output hashes and sample flags, the reference solutions, the limits and the allowed languages. Editing any of them on a `verified` version (test endpoints, solutions, PATCH limits or languages, the testcases page save, generate accepted through it) puts the version back to `draft` and `valid` becomes false; editing is refused with 409 `VERIFY_IN_PROGRESS` while verifying. Title and statement are not part of the hash.
+
+**Publish rules** (`publish-checks.ts`): statement (or PDF), languages, `limits` within range, `tests`, `outputs`, at least one sample, `hidden_tests` (non-sample tests >= `PUBLISH_MIN_HIDDEN_TESTS`, default 1; sent as `constraints.publish.min_hidden_tests`), a primary solution, and `verified` (the latest passing run still matches the hash). A failed check is a 409 `PUBLISH_BLOCKED` with one detail per check and its message.
+
+## Versions, Minor and Major updates (GRD-116, GRD-117, GRD-54)
+
+The fields of a version are in two groups defined once in `src/constants/version-fields.ts` and sent as `constraints.version_fields`: **Major** = time limit, memory limit, allowed languages, tests (input/output, order, Visible to solvers) and reference solutions; **Minor** = title, statement, statement mode (and its PDF). Any new field must be added to a group.
+
+`POST …/updates` (owner, administrator, editor): Core decides the type from the fields that really change compared with the open version (`version-classifier.ts`, a pure function); the client never picks it, and a value equal to the current one is not a change. One changed Major field makes the whole update Major, with any Minor fields riding along; `force_major: true` makes it Major always, is recorded as `forced` in the history and is never remembered.
+
+- **Minor**: edits the open version in place, effective at once, no draft, no verification; `minor` + 1; one history entry with a change per field (who, when, field, old, new; text cut at 2000 characters). The basic rules run first (non-empty statement unless PDF mode, the PDF must already be uploaded) and a failure changes nothing. `expected_version` is an optimistic lock: a mismatch is 409 `VERSION_CONFLICT` with the current label in `details`. If a Major draft is open, each changed Minor field is also copied into it, but only where the draft still has the open version's old value.
+- **Major**: 409 `DRAFT_EXISTS` if a draft is open, else a draft of Major + 1 (Minor 0) is created with everything copied (test rows, solutions, statement, PDF, limits, languages) and the submitted fields applied; history `major_draft_created`. `POST …/draft` is the same copy with no changes (forced implied); `DELETE …/draft` discards it (409 `NO_DRAFT`, `VERIFY_IN_PROGRESS`). The draft is edited with the usual endpoints, verified and published; publishing makes it `current_version_id` (v2.1 -> v3.0 is a new row, the old one stays published and immutable).
+- While a draft exists solvers, the problem list, tracks, collections, progress and "submit" all use `current_version_id`, the open version; the editor GET returns the draft as `version` and the open one as `open_version`. Submissions stay bound to the Major they were sent to; `outdated` is true when a newer Major is open; nothing is re-judged.
+- `GET …/history` (owner, administrator, editor, observer; solvers and visitors get 403/404) lists updates and state changes.
+- Limitation: the PDF statement of a published version cannot be replaced by a Minor update (the contract has no file field there); upload it into a Major draft.
 
 ## Tracks, Collections and PDF statements
 
@@ -63,9 +96,9 @@ Storing order: validate, write the objects (skipping any that already exist: con
 
 The integration test against a real bucket (`src/libs/storage/storage.test.ts`) runs when `R2_TEST_ENDPOINT`, `R2_TEST_ACCESS_KEY_ID`, `R2_TEST_SECRET_ACCESS_KEY` and `R2_TEST_BUCKET` are set (point them at the staging bucket); it writes under a random prefix and removes what it wrote. Without them it is skipped.
 
-## Publishing (provisional)
+## Publishing
 
-`POST …/publish` makes the draft the published, immutable version. It needs a statement, an allowed language, at least one testcase, an expected output for every testcase, at least one sample testcase and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item. **This is only the cheap first gate.** Milestone 4 (GRD-50 to GRD-52) puts the verification run (the reference solution against every test on Judge) in front of it. Archiving closes a published problem to submissions but keeps it readable; a never-published draft is deleted instead.
+`POST …/publish` makes the verified version the published one: see "The publish gate" above. The first publish gives v1.0; publishing a Major draft makes it the open version. Archiving closes a published problem to submissions but keeps it readable; a never-published draft is deleted instead.
 
 ## Reference solutions (GRD-26)
 
@@ -108,6 +141,6 @@ See the README. In short: Judge's `callback.allowed_url_prefixes` must contain `
 ## Not done on purpose
 
 - Orphaned objects in storage are not cleaned up (M5).
-- Creating a new draft version of a published problem and the verification run (M4). Progression already survives new versions (see tracks.md).
+- Re-judging old submissions against a new Major: submissions keep their result and are shown as outdated (GRD-54). Progression survives new versions (see tracks.md).
 - Rate limits and abuse rules beyond the submission limit (GRD-55).
 - Per-problem statistics, "solved" marks and leaderboards.

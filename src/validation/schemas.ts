@@ -160,6 +160,33 @@ export const updateProblemBody = z
     message: 'Send at least one field to change.',
   });
 
+/** A Minor or Major update of a published problem (GRD-117, GRD-54); the slug is not editable. */
+export const publishedUpdateBody = z
+  .object({
+    expected_version: z.object({
+      major: z.number().int().min(1),
+      minor: z.number().int().min(0),
+    }),
+    force_major: z.boolean().default(false),
+    title: problemTitle.optional(),
+    statement: problemStatement.optional(),
+    statement_mode: z.enum(['markdown', 'pdf']).optional(),
+    time_limit_ms: timeLimit.optional(),
+    memory_limit_kb: memoryLimit.optional(),
+    allowed_languages: allowedLanguages.optional(),
+  })
+  .refine(
+    (body) =>
+      body.force_major ||
+      Object.keys(body).some((key) => key !== 'expected_version' && key !== 'force_major'),
+    { message: 'Send at least one field to change, or force_major.' }
+  );
+
+export const historyQuery = z.object({
+  page: pagination.page,
+  page_size: pagination.page_size,
+});
+
 export const problemListQuery = z.object({
   ...pagination,
   status: z.enum(['published', 'draft', 'archived', 'all']).default('published'),

@@ -1,4 +1,9 @@
-import { Language, ProblemStatus, StatementMode } from '../../generated/prisma/enums';
+import {
+  Language,
+  ProblemStatus,
+  ProblemVersionStatus,
+  StatementMode,
+} from '../../generated/prisma/enums';
 import { Db, Prisma } from '@/repositories/db';
 
 const WITH_AUTHOR = {
@@ -15,6 +20,9 @@ export interface ProblemListFilter {
   skip: number;
   take: number;
 }
+
+/** Versions that are still being worked on: at most one per problem. */
+export const IN_PROGRESS: ProblemVersionStatus[] = ['draft', 'verifying', 'verified'];
 
 export interface VersionContent {
   title?: string;
@@ -97,8 +105,80 @@ export default class ProblemRepository {
     await db.$queryRaw`SELECT id FROM problems WHERE id = ${problemId}::uuid FOR UPDATE`;
   }
 
+  /** The version in progress (draft, verifying or verified), if any; at most one exists. */
   findDraftVersion(db: Db, problemId: string) {
-    return db.problemVersion.findFirst({ where: { problem_id: problemId, status: 'draft' } });
+    return db.problemVersion.findFirst({
+      where: { problem_id: problemId, status: { in: IN_PROGRESS } },
+    });
+  }
+
+  setVersionStatus(db: Db, id: string, status: ProblemVersionStatus) {
+    return db.problemVersion.update({ where: { id }, data: { status } });
+  }
+
+  /** Minor update: the new content and the next Minor number in one write. */
+  applyMinor(db: Db, id: string, data: VersionContent) {
+    return db.problemVersion.update({ where: { id }, data: { ...data, minor: { increment: 1 } } });
+  }
+
+  deleteVersion(db: Db, id: string) {
+    return db.problemVersion.delete({ where: { id } });
+  }
+
+  /**
+   * A draft of the next Major: a row for `source`'s content (Minor fields, PDF,
+   * limits, languages) with Major + 1 and Minor 0; tests and reference
+   * solutions are copied by `copyChildren`.
+   */
+  createDraftFrom(
+    db: Db,
+    source: {
+      problem_id: string;
+      version_number: number;
+      title: string;
+      statement: string;
+      statement_mode: StatementMode;
+      statement_pdf_sha256: string | null;
+      statement_pdf_size_bytes: number | null;
+      statement_pdf_pages: number | null;
+      time_limit_ms: number;
+      memory_limit_kb: number;
+      allowed_languages: Language[];
+    }
+  ) {
+    return db.problemVersion.create({
+      data: {
+        problem_id: source.problem_id,
+        version_number: source.version_number + 1,
+        minor: 0,
+        status: 'draft',
+        title: source.title,
+        statement: source.statement,
+        statement_mode: source.statement_mode,
+        statement_pdf_sha256: source.statement_pdf_sha256,
+        statement_pdf_size_bytes: source.statement_pdf_size_bytes,
+        statement_pdf_pages: source.statement_pdf_pages,
+        time_limit_ms: source.time_limit_ms,
+        memory_limit_kb: source.memory_limit_kb,
+        allowed_languages: source.allowed_languages,
+      },
+    });
+  }
+
+  /** Copies the test cases and reference solutions of one version into another (new rows, same files). */
+  async copyChildren(db: Db, fromId: string, toId: string): Promise<void> {
+    await db.$executeRaw`
+      INSERT INTO "test_cases" ("id", "problem_version_id", "position", "input_sha256", "output_sha256",
+                                "input_size_bytes", "output_size_bytes", "is_sample", "updated_at")
+      SELECT gen_random_uuid(), ${toId}::uuid, "position", "input_sha256", "output_sha256",
+             "input_size_bytes", "output_size_bytes", "is_sample", CURRENT_TIMESTAMP
+      FROM "test_cases" WHERE "problem_version_id" = ${fromId}::uuid`;
+    await db.$executeRaw`
+      INSERT INTO "reference_solutions" ("id", "problem_version_id", "created_by_id", "language", "source",
+                                         "source_bytes", "is_primary", "updated_at")
+      SELECT gen_random_uuid(), ${toId}::uuid, "created_by_id", "language", "source",
+             "source_bytes", "is_primary", CURRENT_TIMESTAMP
+      FROM "reference_solutions" WHERE "problem_version_id" = ${fromId}::uuid`;
   }
 
   findVersion(db: Db, id: string) {
