@@ -4057,7 +4057,18 @@ components:
       properties:
         key:
           type: string
-          enum: [statement, languages, limits, sample_test, tests, hidden_tests, outputs, solution, verified]
+          enum:
+            [
+              statement,
+              languages,
+              limits,
+              sample_test,
+              tests,
+              hidden_tests,
+              outputs,
+              solution,
+              verified,
+            ]
         ok:
           type: boolean
         message:
