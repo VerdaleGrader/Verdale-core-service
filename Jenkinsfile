@@ -34,22 +34,22 @@ pipeline {
                 '''
             }
         }
-        stage("Migrate Database") {
-            steps {
-                echo "🔼 Waiting for app container to be ready..."
-                sh '''
-                for i in $(seq 1 30); do
-                    if docker compose -f docker-compose.deploy.yml ps app --format "{{.Status}}" 2>/dev/null | grep -q "Up" || docker-compose -f docker-compose.deploy.yml ps app 2>/dev/null | grep -q "Up"; then
-                        echo "✅ App container is running"
-                        break
-                    fi
-                    sleep 1
-                done
-                '''
-                echo "🔼 Running Prisma migrations..."
-                sh 'docker compose -f docker-compose.deploy.yml exec -T app npx prisma migrate deploy || docker-compose -f docker-compose.deploy.yml exec -T app npx prisma migrate deploy'
-            }
-        }
+        // stage("Migrate Database") {
+        //     steps {
+        //         echo "🔼 Waiting for app container to be ready..."
+        //         sh '''
+        //         for i in $(seq 1 30); do
+        //             if docker compose -f docker-compose.deploy.yml ps app --format "{{.Status}}" 2>/dev/null | grep -q "Up" || docker-compose -f docker-compose.deploy.yml ps app 2>/dev/null | grep -q "Up"; then
+        //                 echo "✅ App container is running"
+        //                 break
+        //             fi
+        //             sleep 1
+        //         done
+        //         '''
+        //         echo "🔼 Running Prisma migrations..."
+        //         sh 'docker compose -f docker-compose.deploy.yml exec -T app npx prisma migrate deploy || docker-compose -f docker-compose.deploy.yml exec -T app npx prisma migrate deploy'
+        //     }
+        // }
     }
     post {
         success {
