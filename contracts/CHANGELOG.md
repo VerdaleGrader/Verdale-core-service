@@ -9,6 +9,11 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.7.0 (2026-10-13)
+
+- Additive. `SubmissionSummary.number` (GRD-115): the submission's place among its author's submissions of the problem, oldest first ("Submission #3" in the solve page). Present on every summary: create, list, `best` and detail.
+- Deploy order: Core first, then Frontend re-pins with `contracts:sync`. No migration. Judge needs no deploy; its contract only has its version bumped.
+
 ## 0.6.0 (2026-10-13)
 
 - Additive. Previous submissions of one's own, with per-test summary and Best Submission (GRD-113, for GRD-112):

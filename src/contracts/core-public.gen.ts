@@ -2096,6 +2096,11 @@ export interface components {
     SubmissionSummary: {
       /** Format: uuid */
       id: string;
+      /**
+       * @description "Submission #3": its place among its author's submissions of this problem, oldest
+       *     first. It does not change as newer ones arrive or when another page is read.
+       */
+      number: number;
       problem: {
         slug: string;
         title: string;
