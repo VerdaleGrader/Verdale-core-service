@@ -116,6 +116,27 @@ export default class SubmissionRepository {
     });
   }
 
+  /**
+   * "Submission #3": the 1-based place of each submission among its author's submissions of the
+   * problem, oldest first. Computed over the author's whole history, so it does not depend on the
+   * page being read.
+   */
+  async numbersOf(db: Db, problemId: string, submissions: { id: string; user_id: string }[]) {
+    const numbers = new Map<string, number>();
+    if (submissions.length === 0) return numbers;
+    const userIds = [...new Set(submissions.map((submission) => submission.user_id))];
+    const ids = submissions.map((submission) => submission.id);
+    const rows = await db.$queryRaw<Array<{ id: string; number: bigint }>>`
+      SELECT id::text AS id, number FROM (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at, id) AS number
+        FROM submissions
+        WHERE problem_id = ${problemId}::uuid AND user_id = ANY(${userIds}::uuid[])
+      ) numbered
+      WHERE id = ANY(${ids}::uuid[])`;
+    for (const row of rows) numbers.set(row.id, Number(row.number));
+    return numbers;
+  }
+
   /** For each user, the problems among `problemIds` that they solved (an AC on any version). */
   async solvedBy(
     db: Db,

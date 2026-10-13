@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.6.0
+  version: 0.7.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -4039,6 +4039,7 @@ components:
       required:
         [
           id,
+          number,
           problem,
           space,
           author,
@@ -4057,6 +4058,12 @@ components:
         id:
           type: string
           format: uuid
+        number:
+          type: integer
+          minimum: 1
+          description: |
+            "Submission #3": its place among its author's submissions of this problem, oldest
+            first. It does not change as newer ones arrive or when another page is read.
         problem:
           type: object
           required: [slug, title]

@@ -8,6 +8,8 @@ export type SubmissionStatusName = 'queued' | 'running' | 'completed';
 
 export interface SubmissionSummaryDto {
   id: string;
+  /** "Submission #3": its place among the author's submissions of this problem, oldest first. */
+  number: number;
   problem: { slug: string; title: string };
   space: { name: string; slug: string };
   author: PublicUser;
@@ -77,10 +79,12 @@ type Summarisable = Pick<
 
 export function toSubmissionSummary(
   submission: Summarisable & { results?: { verdict: TestVerdictName }[] },
-  space: { name: string; slug: string }
+  space: { name: string; slug: string },
+  number: number
 ): SubmissionSummaryDto {
   return {
     id: submission.id,
+    number,
     problem: { slug: submission.problem.slug, title: submission.version.title },
     space,
     author: toPublicUser(submission.user),
@@ -105,10 +109,10 @@ export function toSubmissionSummary(
 export function toSubmissionDto(
   submission: SubmissionRecord,
   space: { name: string; slug: string },
-  options: { includeSource: boolean; canRejudge: boolean }
+  options: { includeSource: boolean; canRejudge: boolean; number: number }
 ): SubmissionDto {
   return {
-    ...toSubmissionSummary(submission, space),
+    ...toSubmissionSummary(submission, space, options.number),
     ...(options.includeSource ? { source: submission.source } : {}),
     compile_message: submission.compile_message,
     error_code: submission.error_code,

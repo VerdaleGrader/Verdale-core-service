@@ -138,7 +138,8 @@ export default class SubmissionService {
       data: { submissionId: created.id, problemId: problem.id, versionId: version.id },
     });
     this.dispatcher.schedule(created.id, requestId);
-    return toSubmissionSummary(created, spaceRef(access));
+    const numbers = await this.submissions.numbersOf(this.prisma, problem.id, [created]);
+    return toSubmissionSummary(created, spaceRef(access), numbers.get(created.id) ?? 1);
   }
 
   async list(
@@ -175,9 +176,15 @@ export default class SubmissionService {
       input.scope === 'mine'
         ? await this.submissions.findBest(this.prisma, user.id, problem.id)
         : null;
+    const numbers = await this.submissions.numbersOf(
+      this.prisma,
+      problem.id,
+      best ? [...rows, best] : rows
+    );
+    const numberOf = (id: string) => numbers.get(id) ?? 0;
     return {
-      items: rows.map((row) => toSubmissionSummary(row, space)),
-      best: best ? toSubmissionSummary(best, space) : null,
+      items: rows.map((row) => toSubmissionSummary(row, space, numberOf(row.id))),
+      best: best ? toSubmissionSummary(best, space, numberOf(best.id)) : null,
       page: input.page,
       page_size: input.page_size,
       total,
@@ -286,7 +293,11 @@ export default class SubmissionService {
     access: SpaceAccess,
     includeSource: boolean
   ) {
+    const numbers = await this.submissions.numbersOf(this.prisma, submission.problem_id, [
+      submission,
+    ]);
     return toSubmissionDto(submission, spaceRef(access), {
+      number: numbers.get(submission.id) ?? 0,
       includeSource,
       canRejudge: await this.mayRejudge(user, access, submission),
     });

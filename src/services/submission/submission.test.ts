@@ -577,6 +577,27 @@ describeDb('Submissions (GRD-43, 44, 46)', () => {
         expect(all.best).toBeNull();
       });
 
+      it('numbers each submission among its author’s own, whatever page or reader', async () => {
+        const first = await finished(cast.solver, { passed: 1 });
+        const other = await finished(cast.outsider, { passed: 1 });
+        const second = await finished(cast.solver, { passed: 2, verdict: 'AC' });
+        const third = await finished(cast.solver, { passed: 0 });
+        const page = (await cast.solver.request('GET', submissionsUrl())).body;
+        expect(page.items.map((item: { number: number }) => item.number)).toEqual([3, 2, 1]);
+        expect(page.best).toMatchObject({ id: second, number: 2 });
+        // A later page and the detail agree; so does the Space's staff reading everyone's.
+        const secondPage = (await cast.solver.request('GET', submissionsUrl('?page=2&page_size=2')))
+          .body;
+        expect(secondPage.items[0]).toMatchObject({ id: first, number: 1 });
+        expect((await cast.solver.request('GET', `/api/v1/submissions/${third}`)).body.number).toBe(
+          3
+        );
+        const all = (await cast.editor.request('GET', submissionsUrl('?scope=all'))).body;
+        expect(all.items.find((item: { id: string }) => item.id === other).number).toBe(1);
+        const created = await submitCode(cast.solver, cast.slug, 'sum');
+        expect(created.body.number).toBe(4);
+      });
+
       it('has the index the best query reads', async () => {
         const indexes = await t.prisma.$queryRaw<Array<{ indexdef: string }>>`
           SELECT indexdef FROM pg_indexes WHERE tablename = 'submissions'`;
