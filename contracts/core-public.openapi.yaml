@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.7.0
+  version: 0.8.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -860,8 +860,11 @@ paths:
         Makes the draft the published, immutable version. Needs a statement, at least
         one sample test, one test in total with an expected output for every test, one allowed
         language and a primary reference solution; otherwise 409 `PUBLISH_BLOCKED` with one `details` entry per missing item.
-        Provisional: Milestone 4 puts the verification run (reference solution against
-        every test on Judge) in front of this step.
+        The version must be `verified` (a passing verification run whose content hash still matches the
+        current tests, reference solutions, limits and languages) and also pass the publish rules; otherwise
+        409 `PUBLISH_BLOCKED` with one `details` entry per failing check. Publishing the first version gives v1.0; publishing a
+        Major draft makes it the open version (`major` + 1, `minor` 0). Both are immutable in their Major fields afterwards
+        (see `constraints.version_fields`): a direct change to them is refused at the API and by a database trigger.
       security:
         - session: []
       parameters:
@@ -881,6 +884,199 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/verify:
+    post:
+      operationId: verifyProblem
+      tags: [problems]
+      summary: Run the reference solution against every test on Judge (owner, administrator or editor)
+      description: |
+        Moves the draft version from `draft` to `verifying` and sends one `verify` job (the primary
+        reference solution and every test, hidden ones included) to Judge. The answer is 202 with the run;
+        poll `GET .../verify` (about every 2 seconds) for progress. Every test must be AC for the run to pass;
+        a pass moves the version to `verified`, a failure or an error moves it back to `draft` with the reason in
+        the report. A run that Judge never answers is closed as `error` after a deadline, so the status never sticks.
+        Needs the cheap checks (statement, languages, tests, outputs, samples, solution) to be ok first:
+        otherwise 409 `VERIFY_BLOCKED` with one `details` entry per missing item. 409 `VERIFY_IN_PROGRESS` while a run is
+        open; 409 `NO_DRAFT` when the problem has no draft version to verify.
+        Editing the tests, the reference solutions, the limits or the languages of a `verified` version moves it back to `draft`
+        and the old report is no longer `valid`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '202':
+          description: Verification started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationRun'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: getVerification
+      tags: [problems]
+      summary: The latest verification run of the draft (owner, administrator, editor or observer)
+      description: |
+        The newest run for the current draft version, or 404 `NO_VERIFICATION` if none was started. Per-test
+        results (which test failed and its verdict) are only for staff; solvers never reach this endpoint.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: The latest run
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationRun'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/updates:
+    post:
+      operationId: updatePublishedProblem
+      tags: [problems]
+      summary: Edit a published problem as a Minor or Major update (owner, administrator or editor)
+      description: |
+        Core decides the type from the fields that really change compared with the open version; the client never
+        picks it (`constraints.version_fields` lists both groups). If no field of the Major group changes and
+        `force_major` is false it is a **Minor update**: applied directly to the open version, effective at once, no draft and no
+        verification, `minor` + 1, one history entry (who, when, field, old and new value). If any Major field changes, even
+        one, or `force_major` is true, the whole update is **Major**: a draft of the next Major
+        (`major + 1`, `minor` 0) is created from the open version (tests, reference solutions and everything else copied), the
+        submitted fields are applied to it, and it must pass verification and the publish rules before it replaces the open
+        version. While the draft exists solvers keep using the open version. `force_major` is not remembered. The slug cannot change.
+        Minor fields keep the basic rules (non-empty statement, PDF size and page rules); a request that fails them changes nothing.
+        `expected_version` is the version the client started from; if the open version moved on, 409 `VERSION_CONFLICT`
+        with the current `label` in `details` and nothing is changed. A Minor update while a Major draft is open also copies each
+        changed Minor field into the draft, but only the fields the draft has not changed itself.
+        Test cases and reference solutions are changed with `POST .../draft` followed by the existing test and solution endpoints
+        (any such change is Major by nature). 409 `DRAFT_EXISTS` when a Major draft is already open and the request is Major.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishedUpdateRequest'
+      responses:
+        '200':
+          description: Applied (Minor) or draft created (Major)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateOutcome'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/draft:
+    post:
+      operationId: createMajorDraft
+      tags: [problems]
+      summary: Start a draft of the next Major version (owner, administrator or editor)
+      description: |
+        Copies the open published version (everything, including tests and reference solutions) into a new draft
+        `major + 1`, `minor` 0, so tests and solutions can be edited with the existing endpoints. Always a Major update;
+        `force_major` is implied. 409 `DRAFT_EXISTS` if one is open, 409 `NOT_PUBLISHED` for a problem that was never published.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: discardMajorDraft
+      tags: [problems]
+      summary: Throw away the open Major draft (owner, administrator or editor)
+      description: |
+        Deletes the draft of a problem that has a published version. The open version is untouched. 409 `NO_DRAFT` if there
+        is none; 409 `VERIFY_IN_PROGRESS` while a verification run is open.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: Discarded; the editor of the open version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemEditor'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/history:
+    get:
+      operationId: listProblemHistory
+      tags: [problems]
+      summary: Version and state history (owner, administrator, editor or observer)
+      description: |
+        Newest first. Minor and Major updates (who, when, which fields, old and new value, forced or not) and every state
+        change (draft, verifying, verified, published) with who and when. Solvers and visitors get 403/404.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of history entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHistoryPage'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
   /api/v1/spaces/{slug}/problems/{problemSlug}/archive:
     post:
@@ -3492,8 +3688,20 @@ components:
           solutions,
           source_max_bytes,
           pdf,
+          version_fields,
+          publish,
         ]
       properties:
+        version_fields:
+          $ref: '#/components/schemas/VersionFields'
+        publish:
+          type: object
+          required: [min_hidden_tests]
+          properties:
+            min_hidden_tests:
+              type: integer
+              minimum: 0
+              description: Hidden (not sample) testcases a version needs to be published; configurable, default 1
         pdf:
           type: object
           required: [max_bytes, max_pages]
@@ -3596,6 +3804,8 @@ components:
           title,
           status,
           version_number,
+          version_minor,
+          version_label,
           time_limit_ms,
           memory_limit_kb,
           allowed_languages,
@@ -3616,7 +3826,13 @@ components:
           $ref: '#/components/schemas/ProblemStatus'
         version_number:
           type: integer
-          description: The current version
+          description: The Major of the current version
+        version_minor:
+          type: integer
+          minimum: 0
+        version_label:
+          type: string
+          example: v2.1
         time_limit_ms:
           type: integer
         memory_limit_kb:
@@ -3695,6 +3911,8 @@ components:
           statement_mode,
           statement_pdf,
           version_number,
+          version_minor,
+          version_label,
           time_limit_ms,
           memory_limit_kb,
           allowed_languages,
@@ -3734,6 +3952,13 @@ components:
               type: integer
         version_number:
           type: integer
+          description: The Major
+        version_minor:
+          type: integer
+          minimum: 0
+        version_label:
+          type: string
+          example: v2.1
         time_limit_ms:
           type: integer
         memory_limit_kb:
@@ -3761,6 +3986,9 @@ components:
         [
           id,
           number,
+          major,
+          minor,
+          label,
           status,
           title,
           statement,
@@ -3779,9 +4007,22 @@ components:
           format: uuid
         number:
           type: integer
+          description: Same as `major`
+        major:
+          type: integer
+          minimum: 1
+        minor:
+          type: integer
+          minimum: 0
+        label:
+          type: string
+          example: v2.1
         status:
           type: string
-          enum: [draft, published]
+          enum: [draft, verifying, verified, published]
+          description: |
+            `draft` -> `verifying` -> `verified` (ready to publish) -> `published`. A failed or errored run, or any
+            edit of the tests, solutions, limits or languages of a `verified` version, goes back to `draft`.
         title:
           type: string
         statement:
@@ -3816,7 +4057,7 @@ components:
       properties:
         key:
           type: string
-          enum: [statement, languages, sample_test, tests, outputs, solution]
+          enum: [statement, languages, limits, sample_test, tests, hidden_tests, outputs, solution, verified]
         ok:
           type: boolean
         message:
@@ -3824,6 +4065,228 @@ components:
           description: |
             What is needed (when not ok) or what is in place (when ok). `outputs` is not ok while a
             testcase has no expected output: upload one or generate it from a solution
+    VersionFields:
+      type: object
+      description: |
+        The two groups of editable fields, defined once in Core. A change touching any `major` field makes the whole
+        update Major. The names are the request field names of `PublishedUpdateRequest`, plus `tests` and `solutions`
+        (test input/output, their order, Visible to solvers, reference solutions) which are changed through their own endpoints.
+      required: [major, minor]
+      properties:
+        major:
+          type: array
+          items:
+            type: string
+          example: [time_limit_ms, memory_limit_kb, allowed_languages, tests, solutions]
+        minor:
+          type: array
+          items:
+            type: string
+          example: [title, statement, statement_mode]
+    VersionLabelParts:
+      type: object
+      required: [major, minor]
+      properties:
+        major:
+          type: integer
+          minimum: 1
+        minor:
+          type: integer
+          minimum: 0
+    PublishedUpdateRequest:
+      type: object
+      description: At least one problem field, or `force_major` true. The slug is not editable.
+      required: [expected_version]
+      properties:
+        expected_version:
+          $ref: '#/components/schemas/VersionLabelParts'
+        force_major:
+          type: boolean
+          default: false
+          description: Make this update Major even when no Major field changes. Applies to this request only.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        statement:
+          type: string
+        statement_mode:
+          $ref: '#/components/schemas/StatementMode'
+        time_limit_ms:
+          type: integer
+        memory_limit_kb:
+          type: integer
+        allowed_languages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Language'
+    UpdateOutcome:
+      type: object
+      required: [kind, forced, major_fields, label, editor]
+      properties:
+        kind:
+          type: string
+          enum: [minor, major_draft]
+        forced:
+          type: boolean
+          description: Major only because `force_major` was set (no Major field changed)
+        major_fields:
+          type: array
+          items:
+            type: string
+          description: The Major fields that changed (empty when Minor, or when Major only by force)
+        label:
+          type: string
+          example: v2.2
+          description: The open version after a Minor update; the draft's label (for example v3.0) after a Major one
+        editor:
+          $ref: '#/components/schemas/ProblemEditor'
+    VerificationStatus:
+      type: string
+      enum: [queued, running, passed, failed, error]
+    VerificationTestResult:
+      type: object
+      required: [position, verdict, time_ms, memory_kb, is_sample]
+      properties:
+        position:
+          type: integer
+        verdict:
+          $ref: '#/components/schemas/TestVerdict'
+        time_ms:
+          type: integer
+          nullable: true
+        memory_kb:
+          type: integer
+          nullable: true
+        is_sample:
+          type: boolean
+    VerificationRun:
+      type: object
+      required:
+        [
+          id,
+          status,
+          valid,
+          requested_by,
+          created_at,
+          finished_at,
+          verdict,
+          reason,
+          tests_passed,
+          tests_total,
+          max_time_ms,
+          max_memory_kb,
+          results,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/VerificationStatus'
+        valid:
+          type: boolean
+          description: |
+            True for a `passed` run whose content hash (tests, reference solutions, limits, languages) still equals
+            the draft's current one. Any later change makes it false and the version goes back to `draft`.
+        requested_by:
+          $ref: '#/components/schemas/PublicUser'
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        verdict:
+          allOf:
+            - $ref: '#/components/schemas/Verdict'
+          nullable: true
+          description: Overall Judge verdict once finished (CE for a solution that does not compile, ISE for a Judge error)
+        reason:
+          type: string
+          nullable: true
+          description: Why it did not pass (for example "Test 4 is WA", "Judge did not answer in time"); null while running or when passed
+        tests_passed:
+          type: integer
+          nullable: true
+        tests_total:
+          type: integer
+        max_time_ms:
+          type: integer
+          nullable: true
+          description: Slowest test, helps choosing the time limit
+        max_memory_kb:
+          type: integer
+          nullable: true
+          description: Largest peak memory of a test, helps choosing the memory limit
+        results:
+          type: array
+          description: Per testcase (hidden ones included); staff only. Empty until Judge reports
+          items:
+            $ref: '#/components/schemas/VerificationTestResult'
+    FieldChange:
+      type: object
+      required: [field, old, new]
+      properties:
+        field:
+          type: string
+        old:
+          type: string
+          nullable: true
+          description: Text fields are cut to 2000 characters; list fields are joined with commas; tests and solutions describe the change in words
+        new:
+          type: string
+          nullable: true
+    VersionHistoryEntry:
+      type: object
+      required: [id, type, label, actor, at, forced, changes, state_from, state_to]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [minor_update, major_draft_created, major_draft_discarded, state_change]
+        label:
+          type: string
+          example: v2.1
+          description: The version the entry is about, after the change
+        actor:
+          $ref: '#/components/schemas/PublicUser'
+        at:
+          type: string
+          format: date-time
+        forced:
+          type: boolean
+          description: Major because of Force major update
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldChange'
+        state_from:
+          type: string
+          nullable: true
+          enum: [draft, verifying, verified, published, null]
+        state_to:
+          type: string
+          nullable: true
+          enum: [draft, verifying, verified, published, null]
+    VersionHistoryPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionHistoryEntry'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
     ProblemEditor:
       type: object
       required:
@@ -3842,6 +4305,8 @@ components:
           publish_checks,
           can_publish,
           constraints,
+          open_version,
+          verification,
         ]
       properties:
         id:
@@ -3855,9 +4320,21 @@ components:
           $ref: '#/components/schemas/SpaceRef'
         version:
           $ref: '#/components/schemas/ProblemVersion'
+        open_version:
+          allOf:
+            - $ref: '#/components/schemas/ProblemVersion'
+          nullable: true
+          description: |
+            The published version solvers use now. Null while the problem was never published. Differs from `version`
+            while a Major draft is open (then `version` is the draft). Same as `version` when there is no draft.
+        verification:
+          allOf:
+            - $ref: '#/components/schemas/VerificationRun'
+          nullable: true
+          description: The latest verification run of `version` when it is a draft, verifying or verified version; else null
         editable:
           type: boolean
-          description: The version is a draft, the problem is not archived and the Space is not archived
+          description: The version is a draft or verified (not verifying or published), the problem is not archived and the Space is not archived
         created_by:
           $ref: '#/components/schemas/PublicUser'
         created_at:
@@ -3882,7 +4359,7 @@ components:
             $ref: '#/components/schemas/PublishCheck'
         can_publish:
           type: boolean
-          description: Every check is ok and the version is an editable draft
+          description: Every check is ok (including `verified`) and the version is an editable, verified draft
         constraints:
           $ref: '#/components/schemas/ProblemConstraints'
     ImageUpload:
@@ -4051,6 +4528,8 @@ components:
           tests_passed,
           tests_total,
           test_runs,
+          version_major,
+          outdated,
           created_at,
           judged_at,
         ]
@@ -4058,6 +4537,13 @@ components:
         id:
           type: string
           format: uuid
+        version_major:
+          type: integer
+          minimum: 1
+          description: The Major of the problem version it was sent to. A Minor update does not change it.
+        outdated:
+          type: boolean
+          description: A newer Major of the problem is published. The result stays as it was; it is not re-judged.
         number:
           type: integer
           minimum: 1
