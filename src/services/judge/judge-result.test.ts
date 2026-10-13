@@ -340,9 +340,9 @@ describeDb('Result callback from Judge (GRD-45)', () => {
       expect((await stored()).status).toBe('queued');
     });
 
-    it('refuses a result that is not a submission job', async () => {
+    it('a verify result for a job that is not a verification run is an unknown job', async () => {
       const response = await t.deliver(jobResult(t.judge.last, { kind: 'verify' }));
-      expect(response.status).toBe(422);
+      expect(response.status).toBe(404);
       expect((await stored()).status).toBe('queued');
     });
 

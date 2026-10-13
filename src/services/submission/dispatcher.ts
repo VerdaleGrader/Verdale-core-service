@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../../generated/prisma/client';
-import { CAPTURE, DISPATCH_GIVE_UP_MS, OUTPUT_LIMIT_KB } from '@/constants/limits';
+import { DISPATCH_GIVE_UP_MS } from '@/constants/limits';
 import { JobRequest, JudgeClient, JudgeRejectedError, JudgeUnavailableError } from '@/libs/judge';
 import TLogger, { Layer } from '@/logging/logger';
 import ProblemRepository from '@/repositories/problem.repository';
 import SubmissionRepository from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import { buildJudgeJob } from '@/services/judge/job-builder';
 
 export interface DispatcherOptions {
   /** Where Judge POSTs the result (Core's /internal/judge/result). */
@@ -18,6 +19,13 @@ export interface DispatcherOptions {
 }
 
 const MAX_BACKOFF_MS = 60_000;
+
+/** Work other services want done on each tick of the background loop. */
+export interface BackgroundWork {
+  tick(): Promise<void>;
+  /** Resolves when the work started so far has finished. */
+  idle(): Promise<void>;
+}
 
 /**
  * Hands queued submissions to Judge (GRD-44). The submission row exists before
@@ -46,6 +54,13 @@ export default class JudgeDispatcher {
     this.giveUpMs = options.giveUpMs ?? DISPATCH_GIVE_UP_MS;
   }
 
+  private verifier: BackgroundWork | undefined;
+
+  /** Verification runs ride the same loop: hand-overs with backoff, and the deadline sweep. */
+  attachVerifier(verifier: BackgroundWork): void {
+    this.verifier = verifier;
+  }
+
   /** Starts a dispatch in the background; the caller does not wait for Judge. */
   schedule(submissionId: string, requestId?: string): void {
     const run = this.dispatch(submissionId, requestId)
@@ -63,6 +78,7 @@ export default class JudgeDispatcher {
   /** Resolves when every dispatch started so far has finished (tests, graceful shutdown). */
   async idle(): Promise<void> {
     while (this.inflight.size > 0) await Promise.allSettled([...this.inflight]);
+    await this.verifier?.idle();
   }
 
   async dispatch(submissionId: string, requestId?: string): Promise<void> {
@@ -83,26 +99,15 @@ export default class JudgeDispatcher {
 
     // Stored before the request goes out: Judge may call back before we hear its answer.
     const jobId = await this.submissions.assignJobId(this.prisma, submissionId, randomUUID());
-    const request: JobRequest = {
-      job_id: jobId,
+    const request: JobRequest = buildJudgeJob({
+      jobId,
       kind: 'submission',
       language: submission.language,
       source: submission.source,
-      limits: {
-        time_ms: version.time_limit_ms,
-        memory_kb: version.memory_limit_kb,
-        output_kb: OUTPUT_LIMIT_KB,
-      },
-      checker: 'line',
-      capture: { ...CAPTURE },
-      tests: tests.map((test) => ({
-        id: test.id,
-        input: { sha256: test.input_sha256, size_bytes: test.input_size_bytes },
-        output: { sha256: test.output_sha256!, size_bytes: test.output_size_bytes! },
-        sample: test.is_sample,
-      })),
-      callback_url: this.options.callbackUrl,
-    };
+      version,
+      tests,
+      callbackUrl: this.options.callbackUrl,
+    });
 
     try {
       await this.judge.createJob(request);
@@ -167,6 +172,8 @@ export default class JudgeDispatcher {
   async dispatchDue(limit = 20): Promise<number> {
     const due = await this.submissions.dueForDispatch(this.prisma, this.now(), limit);
     await Promise.all(due.map((row) => this.dispatch(row.id)));
+    // Verification runs: hand-overs that failed while Judge was down, runs past their deadline.
+    await this.verifier?.tick();
     return due.length;
   }
 
