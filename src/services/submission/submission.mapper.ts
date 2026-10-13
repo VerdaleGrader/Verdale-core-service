@@ -18,8 +18,15 @@ export interface SubmissionSummaryDto {
   memory_kb: number | null;
   tests_passed: number | null;
   tests_total: number | null;
+  /** The verdicts of the tests in judging order, as runs: enough to draw the progress bar. */
+  test_runs: TestRunDto[];
   created_at: string;
   judged_at: string | null;
+}
+
+export interface TestRunDto {
+  verdict: TestVerdictName;
+  count: number;
 }
 
 export interface SubmissionTestResultDto {
@@ -40,6 +47,17 @@ export interface SubmissionDto extends SubmissionSummaryDto {
   can_rejudge: boolean;
 }
 
+/** [AC, AC, AC, WA, SKIPPED] becomes [{AC, 3}, {WA, 1}, {SKIPPED, 1}]: a hundred tests stay a few runs. */
+export function toTestRuns(results: { verdict: TestVerdictName }[]): TestRunDto[] {
+  const runs: TestRunDto[] = [];
+  for (const { verdict } of results) {
+    const last = runs[runs.length - 1];
+    if (last && last.verdict === verdict) last.count++;
+    else runs.push({ verdict, count: 1 });
+  }
+  return runs;
+}
+
 type Summarisable = Pick<
   SubmissionListRow,
   | 'id'
@@ -58,7 +76,7 @@ type Summarisable = Pick<
 >;
 
 export function toSubmissionSummary(
-  submission: Summarisable,
+  submission: Summarisable & { results?: { verdict: TestVerdictName }[] },
   space: { name: string; slug: string }
 ): SubmissionSummaryDto {
   return {
@@ -73,6 +91,7 @@ export function toSubmissionSummary(
     memory_kb: submission.memory_kb,
     tests_passed: submission.tests_passed,
     tests_total: submission.tests_total,
+    test_runs: toTestRuns(submission.results ?? []),
     created_at: submission.created_at.toISOString(),
     judged_at: submission.judged_at?.toISOString() ?? null,
   };

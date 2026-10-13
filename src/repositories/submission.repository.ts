@@ -7,6 +7,12 @@ const FOR_DISPLAY = {
   version: { select: { title: true } },
 } as const;
 
+/** Just enough of each test to draw a progress bar: no times, no previews. */
+const WITH_VERDICTS = {
+  ...FOR_DISPLAY,
+  results: { orderBy: { position: 'asc' as const }, select: { position: true, verdict: true } },
+} as const;
+
 export interface SubmissionResultInput {
   position: number;
   test_case_id: string | null;
@@ -81,7 +87,7 @@ export default class SubmissionRepository {
     const [rows, total] = await Promise.all([
       db.submission.findMany({
         where,
-        include: FOR_DISPLAY,
+        include: WITH_VERDICTS,
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         skip: filter.skip,
         take: filter.take,
@@ -89,6 +95,25 @@ export default class SubmissionRepository {
       db.submission.count({ where }),
     ]);
     return { rows, total };
+  }
+
+  /**
+   * The best finished submission of one user for a problem: the most tests passed, and among
+   * equals the one sent first. A submission that is still queued or running, ended in a system
+   * error, or passed no test is never the best.
+   */
+  findBest(db: Db, userId: string, problemId: string) {
+    return db.submission.findFirst({
+      where: {
+        user_id: userId,
+        problem_id: problemId,
+        status: 'completed',
+        verdict: { not: 'ISE' },
+        tests_passed: { gt: 0 },
+      },
+      include: WITH_VERDICTS,
+      orderBy: [{ tests_passed: 'desc' }, { created_at: 'asc' }, { id: 'asc' }],
+    });
   }
 
   /** For each user, the problems among `problemIds` that they solved (an AC on any version). */

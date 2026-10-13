@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -1743,6 +1743,14 @@ paths:
       description: |
         `scope=mine` (default) lists the caller's own. `scope=all` lists everyone's and is for
         the staff only (owner, administrator, editor, observer; 403 for others).
+        Every item carries `test_runs`, the verdicts of its tests in judging order as runs, so a
+        progress bar can be drawn for each row without fetching the submissions one by one.
+        With `scope=mine` the page also carries `best`, the caller's best submission of the
+        problem whatever page is asked for: the most tests passed, and among equals the one sent
+        first. A submission that is not finished, ended in a system error (ISE) or passed no test
+        is never the best, so `best` is null until one passes a test. `best` also appears among
+        `items` on its own page; Web shows it apart. The source of any of them comes from
+        `GET /api/v1/submissions/{submissionId}`.
       security:
         - session: []
       parameters:
@@ -4041,6 +4049,7 @@ components:
           memory_kb,
           tests_passed,
           tests_total,
+          test_runs,
           created_at,
           judged_at,
         ]
@@ -4083,6 +4092,14 @@ components:
         tests_total:
           type: integer
           nullable: true
+        test_runs:
+          type: array
+          description: |
+            The verdict of each test in judging order, as runs: AC, AC, AC, WA, SKIPPED is
+            `[{AC, 3}, {WA, 1}, {SKIPPED, 1}]`. Empty until the submission is judged (and after a
+            compilation or system error, which report no test). Holds no test content.
+          items:
+            $ref: '#/components/schemas/TestRun'
         created_at:
           type: string
           format: date-time
@@ -4090,14 +4107,28 @@ components:
           type: string
           format: date-time
           nullable: true
+    TestRun:
+      type: object
+      required: [verdict, count]
+      properties:
+        verdict:
+          $ref: '#/components/schemas/TestVerdict'
+        count:
+          type: integer
+          minimum: 1
     SubmissionPage:
       type: object
-      required: [items, page, page_size, total]
+      required: [items, best, page, page_size, total]
       properties:
         items:
           type: array
           items:
             $ref: '#/components/schemas/SubmissionSummary'
+        best:
+          allOf:
+            - $ref: '#/components/schemas/SubmissionSummary'
+          nullable: true
+          description: The caller's best submission of the problem; null for `scope=all` or when none passed a test
         page:
           type: integer
         page_size:

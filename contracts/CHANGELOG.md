@@ -9,6 +9,14 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.6.0 (2026-10-13)
+
+- Additive. Previous submissions of one's own, with per-test summary and Best Submission (GRD-113, for GRD-112):
+  - `SubmissionSummary.test_runs` (new `TestRun` schema): the verdicts of the tests in judging order as runs, in every list item, create response and detail. Replaces fetching each submission to draw its progress bar.
+  - `SubmissionPage.best`: with `scope=mine`, the caller's best submission of the problem (most tests passed, then the earliest sent; never an unfinished one, an ISE or one that passed no test). Null for `scope=all`.
+  - Nothing else changes: `GET /api/v1/submissions/{id}` already returns `source` to its author and staff, and a problem has at most 100 tests (`TEST_LIMITS.max_count`), so its `results` stay small.
+- Deploy order: Core first (migration `submission_best_index` adds an index), then Frontend re-pins with `contracts:sync`. Judge needs no deploy; its contract only has its version bumped.
+
 ## 0.5.0 (2026-10-12)
 
 - Additive. Roles, Space-wide submissions for staff and the testcases page with Generate (GRD-93, GRD-96, GRD-97, GRD-108):

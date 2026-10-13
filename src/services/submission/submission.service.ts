@@ -41,6 +41,11 @@ export interface SubmissionListInput {
   page_size: number;
 }
 
+export interface SubmissionPageDto extends Page<SubmissionSummaryDto> {
+  /** The caller's best submission of this problem; null for scope=all or when none passed a test. */
+  best: SubmissionSummaryDto | null;
+}
+
 export default class SubmissionService {
   private readonly logger = new TLogger(Layer.SERVICE);
 
@@ -141,7 +146,7 @@ export default class SubmissionService {
     slug: string,
     problemSlug: string,
     input: SubmissionListInput
-  ): Promise<Page<SubmissionSummaryDto>> {
+  ): Promise<SubmissionPageDto> {
     const { access, problem, inTrack } = await this.problemService.loadForReader(
       this.prisma,
       user,
@@ -165,8 +170,14 @@ export default class SubmissionService {
       take: input.page_size,
     });
     const space = spaceRef(access);
+    // "Best" is about the caller's own work, so it is only given with scope=mine.
+    const best =
+      input.scope === 'mine'
+        ? await this.submissions.findBest(this.prisma, user.id, problem.id)
+        : null;
     return {
       items: rows.map((row) => toSubmissionSummary(row, space)),
+      best: best ? toSubmissionSummary(best, space) : null,
       page: input.page,
       page_size: input.page_size,
       total,
