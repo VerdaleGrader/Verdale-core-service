@@ -15,7 +15,11 @@ import TLogger, { Layer } from '@/logging/logger';
 import { Db, isCheckViolation } from '@/repositories/db';
 import ProblemRepository from '@/repositories/problem.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
-import { assertDraftEditable, versionPublishedError } from '@/services/problem/problem.access';
+import {
+  assertDraftEditable,
+  isEditableStatus,
+  versionPublishedError,
+} from '@/services/problem/problem.access';
 import ProblemService from '@/services/problem/problem.service';
 import {
   TestCaseDto,
@@ -116,7 +120,7 @@ export default class TestCaseService {
     const version = await this.problemService.editorVersion(this.prisma, problem);
     return this.listView(this.prisma, version.id, {
       editable:
-        version.status === 'draft' &&
+        isEditableStatus(version.status) &&
         problem.status !== 'archived' &&
         access.space.archived_at === null,
     });
@@ -215,6 +219,7 @@ export default class TestCaseService {
           output_size_bytes: files.output!.size,
         });
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return row;
       });
       logger.info({
@@ -282,6 +287,7 @@ export default class TestCaseService {
             : {}),
         });
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return row;
       });
       logger.info({ message: 'test replaced', data: { problemId: problem.id, testId } });
@@ -323,6 +329,7 @@ export default class TestCaseService {
         }
         const row = await this.tests.update(tx, testId, { is_sample: isSample });
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return row;
       });
       logger.info({ message: 'test sample flag changed', data: { testId, isSample } });
@@ -359,6 +366,7 @@ export default class TestCaseService {
         await this.tests.delete(tx, testId);
         await this.tests.closeGap(tx, version.id, test.position);
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
       });
     } catch (error) {
       if (isCheckViolation(error)) throw versionPublishedError();
@@ -406,6 +414,7 @@ export default class TestCaseService {
           if (test.position !== index + 1) await this.tests.setPosition(tx, id, index + 1);
         }
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return this.listView(tx, version.id, { editable: true });
       });
       logger.info({ message: 'tests reordered', data: { problemId: problem.id } });
@@ -619,6 +628,7 @@ export default class TestCaseService {
           }
         }
         await this.problems.touch(tx, problem.id);
+        await this.problemService.invalidateVerification(tx, problem.id, user.id);
         return this.listView(tx, version.id, { editable: true });
       });
       logger.info({

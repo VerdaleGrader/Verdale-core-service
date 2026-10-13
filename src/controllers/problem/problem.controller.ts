@@ -4,7 +4,6 @@ import { ValidationError } from '@/errors';
 import { readUploads } from '@/controllers/upload';
 import { requireUser } from '@/middleware/session';
 import ImageService from '@/services/problem/image.service';
-import { constraints } from '@/services/problem/problem.mapper';
 import ProblemService from '@/services/problem/problem.service';
 import StatementService from '@/services/problem/statement.service';
 import {
@@ -25,7 +24,7 @@ export default class ProblemController {
 
   /** GET /api/v1/problem-constraints: the ranges the editor must respect, for the create page (no problem exists yet). */
   async constraints(_request: FastifyRequest, reply: FastifyReply) {
-    return reply.send(constraints());
+    return reply.send(this.problemService.constraints());
   }
 
   /** GET /api/v1/spaces/:slug/problems */

@@ -18,6 +18,7 @@ import { JudgeClient } from '@/libs/judge';
 import { Storages } from '@/libs/storage';
 import AssetController from '@/controllers/problem/asset.controller';
 import ProblemController from '@/controllers/problem/problem.controller';
+import VersionController from '@/controllers/problem/version.controller';
 import SolutionController from '@/controllers/problem/solution.controller';
 import TestCaseController from '@/controllers/problem/test-case.controller';
 import JudgeResultController from '@/controllers/judge/judge-result.controller';
@@ -33,6 +34,8 @@ import { SESSION_COOKIE } from '@/middleware/session';
 import AuditRepository from '@/repositories/audit.repository';
 import InviteRepository from '@/repositories/invite.repository';
 import ProblemRepository from '@/repositories/problem.repository';
+import HistoryRepository from '@/repositories/history.repository';
+import VerificationRepository from '@/repositories/verification.repository';
 import SessionRepository from '@/repositories/session.repository';
 import SolutionRepository from '@/repositories/solution.repository';
 import SpaceRepository from '@/repositories/space.repository';
@@ -47,6 +50,8 @@ import ProblemService from '@/services/problem/problem.service';
 import SolutionService from '@/services/problem/solution.service';
 import StatementService from '@/services/problem/statement.service';
 import GenerateService from '@/services/problem/generate.service';
+import VerificationService from '@/services/problem/verification.service';
+import VersionService from '@/services/problem/version.service';
 import TestCaseService from '@/services/problem/test-case.service';
 import JudgeResultService from '@/services/judge/judge-result.service';
 import JudgeDispatcher from '@/services/submission/dispatcher';
@@ -85,7 +90,14 @@ export interface ApiDependencies {
   /** Base URL of statement pictures, e.g. "/api/v1/assets" or the public bucket's domain. */
   publicAssetBaseUrl: string;
   /** Test knobs; production leaves them out. */
-  tuning?: { streamIntervalMs?: number; dispatchGiveUpMs?: number; generateTimeoutMs?: number };
+  tuning?: {
+    streamIntervalMs?: number;
+    dispatchGiveUpMs?: number;
+    generateTimeoutMs?: number;
+    verifyTimeoutMs?: number;
+  };
+  /** Publish rules from the environment (`PUBLISH_MIN_HIDDEN_TESTS`); the default is 1. */
+  publish?: { minHiddenTests: number };
   now?: () => Date;
 }
 
@@ -190,7 +202,17 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  */
 function registerApi(
   app: FastifyInstance,
-  { prisma, auth, oauthProviders, storage, judge, publicAssetBaseUrl, tuning, now }: ApiDependencies
+  {
+    prisma,
+    auth,
+    oauthProviders,
+    storage,
+    judge,
+    publicAssetBaseUrl,
+    tuning,
+    publish,
+    now,
+  }: ApiDependencies
 ) {
   const userRepository = new UserRepository();
   const sessionRepository = new SessionRepository();
@@ -220,6 +242,8 @@ function registerApi(
   );
 
   const problemRepository = new ProblemRepository();
+  const verificationRepository = new VerificationRepository();
+  const historyRepository = new HistoryRepository();
   const testCaseRepository = new TestCaseRepository();
   const solutionRepository = new SolutionRepository();
   const submissionRepository = new SubmissionRepository();
@@ -276,6 +300,9 @@ function registerApi(
     spaceService,
     storage.tests,
     trackRepository,
+    verificationRepository,
+    historyRepository,
+    { minHiddenTests: publish?.minHiddenTests ?? 1 },
     now
   );
   const statementService = new StatementService(
@@ -319,6 +346,26 @@ function registerApi(
     { callbackUrl: judge.config.callbackUrl, now, giveUpMs: tuning?.dispatchGiveUpMs }
   );
   app.decorate('dispatcher', dispatcher);
+  const verificationService = new VerificationService(
+    prisma,
+    verificationRepository,
+    problemRepository,
+    testCaseRepository,
+    solutionRepository,
+    problemService,
+    judge.client,
+    { callbackUrl: judge.config.callbackUrl, now, timeoutMs: tuning?.verifyTimeoutMs }
+  );
+  // Verification runs ride the dispatcher's loop (retries with backoff, deadlines).
+  dispatcher.attachVerifier(verificationService);
+  const versionService = new VersionService(
+    prisma,
+    problemRepository,
+    historyRepository,
+    verificationRepository,
+    problemService,
+    now
+  );
   const submissionService = new SubmissionService(
     prisma,
     submissionRepository,
@@ -347,11 +394,13 @@ function registerApi(
     testCaseRepository,
     judge.config.callbackKeys,
     generateService,
+    verificationService,
     now
   );
 
   const authController = new AuthController(authService, auth, oauthProviders);
   const problemController = new ProblemController(problemService, imageService, statementService);
+  const versionController = new VersionController(verificationService, versionService);
   const testCaseController = new TestCaseController(
     testCaseService,
     problemService,
@@ -510,6 +559,13 @@ function registerApi(
         v1.get(`${problem}/editor`, problemController.editor.bind(problemController));
         v1.post(`${problem}/publish`, problemController.publish.bind(problemController));
         v1.post(`${problem}/archive`, problemController.archive.bind(problemController));
+        // Publish gate and versions (GRD-50 to GRD-54, GRD-116, GRD-117).
+        v1.post(`${problem}/verify`, versionController.verify.bind(versionController));
+        v1.get(`${problem}/verify`, versionController.getVerification.bind(versionController));
+        v1.post(`${problem}/updates`, versionController.update.bind(versionController));
+        v1.post(`${problem}/draft`, versionController.createDraft.bind(versionController));
+        v1.delete(`${problem}/draft`, versionController.discardDraft.bind(versionController));
+        v1.get(`${problem}/history`, versionController.history.bind(versionController));
         v1.post(`${problem}/images`, problemController.uploadImage.bind(problemController));
         v1.get('/assets/:name', assetController.get.bind(assetController));
         v1.put(
