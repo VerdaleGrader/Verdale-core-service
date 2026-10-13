@@ -37,6 +37,7 @@ model User {
   generate_jobs_created GenerateJob[]       @relation("GenerateJobAuthor")
   verification_runs     VerificationRun[]   @relation("VerificationRequester")
   history_entries       ProblemHistory[]    @relation("HistoryActor")
+  legal_acceptances     LegalAcceptance[]
 
   @@map("users")
 }
@@ -70,6 +71,28 @@ model Session {
   @@index([user_id])
   @@index([expires_at])
   @@map("sessions")
+}
+
+enum LegalDocument {
+  terms
+  privacy
+}
+
+/// Which version of the Terms or Privacy Policy a user accepted, and when
+/// (GRD-122). Nothing else is stored: no IP address, no user agent. The
+/// version is the document's effective date (YYYY-MM-DD, see
+/// src/constants/legal.ts). One row per user, document and version; a new
+/// version of a document means a new row, and the old rows stay as history.
+model LegalAcceptance {
+  user_id     String        @db.Uuid
+  document    LegalDocument
+  version     String        @db.VarChar(10)
+  accepted_at DateTime      @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, document, version])
+  @@map("legal_acceptances")
 }
 
 enum SpaceVisibility {
