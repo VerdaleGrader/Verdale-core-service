@@ -17,6 +17,7 @@ import SessionRepository from '@/repositories/session.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import TrackRepository from '@/repositories/track.repository';
 import UserRepository from '@/repositories/user.repository';
+import LegalService from '@/services/legal/legal.service';
 import { toSessionUser, SessionUser } from '@/services/user/user.mapper';
 
 export interface OAuthStart {
@@ -73,6 +74,7 @@ export default class AuthService {
     private readonly sessions: SessionRepository,
     private readonly spaces: SpaceRepository,
     private readonly tracks: TrackRepository,
+    private readonly legal: LegalService,
     private readonly providers: OAuthProviders,
     private readonly config: AuthConfigurations,
     private readonly now: () => Date = () => new Date()
@@ -140,10 +142,13 @@ export default class AuthService {
 
     for (let attempt = 1; ; attempt++) {
       try {
-        const outcome = await this.prisma.$transaction((tx) =>
-          this.resolveUser(tx, provider, profile)
-        );
-        const session = await this.createSession(this.prisma, outcome.user.id);
+        // The user, the personal Space, the acceptance of the Terms and the
+        // session are created together (GRD-10, GRD-122): a failure leaves no
+        // half-made account behind, and nobody gets a session without a record.
+        const { session, ...outcome } = await this.prisma.$transaction(async (tx) => {
+          const resolved = await this.resolveUser(tx, provider, profile);
+          return { ...resolved, session: await this.createSession(tx, resolved.user.id) };
+        });
         logger.info({
           message: outcome.isNewUser ? 'user signed up' : 'user logged in',
           data: { provider, userId: outcome.user.id },
@@ -215,6 +220,9 @@ export default class AuthService {
     });
     await this.spaces.addMember(tx, space.id, user.id, 'owner');
     await this.tracks.createStarterTrack(tx, space.id);
+    // The login page says that signing in means accepting the Terms and the
+    // Privacy Policy; record which versions were in force (GRD-122).
+    await this.legal.recordCurrent(tx, user.id);
     return { user, isNewUser: true };
   }
 

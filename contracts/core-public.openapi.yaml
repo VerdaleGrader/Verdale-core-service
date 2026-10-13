@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.8.0
+  version: 0.9.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -159,6 +159,40 @@ paths:
       responses:
         '200':
           description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/legal-acceptance:
+    post:
+      operationId: acceptLegal
+      tags: [users]
+      summary: Accept the Terms and the Privacy Policy
+      description: |
+        Records that the signed-in user accepted the versions of the Terms and the Privacy Policy that the page showed (GRD-122).
+        Only the user, the document, its version and the time are stored. Idempotent.
+        `409 LEGAL_VERSION_CHANGED` when a version is no longer current (the page was open while the documents were
+        republished): reload, read, and accept again.
+        Until a signed-in user has accepted the current versions, every other call that carries their session answers
+        `403 LEGAL_ACCEPTANCE_REQUIRED`; only `GET /api/v1/me`, this call and `/api/v1/auth/*` (log out) stay open.
+        A user who signs in for the first time has both documents recorded as part of creating the account.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalAcceptanceRequest'
+      responses:
+        '200':
+          description: The account, with the acceptance now recorded
           content:
             application/json:
               schema:
@@ -3385,7 +3419,7 @@ components:
     Me:
       type: object
       description: The account owner's view. Other users never see `id` or `email`.
-      required: [id, email, username, display_name, avatar_url, created_at]
+      required: [id, email, username, display_name, avatar_url, created_at, legal]
       properties:
         id:
           type: string
@@ -3405,6 +3439,37 @@ components:
         created_at:
           type: string
           format: date-time
+        legal:
+          $ref: '#/components/schemas/LegalStatus'
+    LegalVersions:
+      type: object
+      description: The version of each document is its effective date (YYYY-MM-DD).
+      required: [terms, privacy]
+      properties:
+        terms:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          example: '2026-10-13'
+        privacy:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          example: '2026-10-13'
+    LegalStatus:
+      type: object
+      description: Whether the user has accepted the current Terms and Privacy Policy (GRD-122).
+      required: [acceptance_required, current_versions]
+      properties:
+        acceptance_required:
+          type: boolean
+          description: |
+            True until the user has accepted both current versions. While true, every call except
+            `GET /api/v1/me`, `POST /api/v1/me/legal-acceptance` and `/api/v1/auth/*` answers 403 LEGAL_ACCEPTANCE_REQUIRED.
+        current_versions:
+          $ref: '#/components/schemas/LegalVersions'
+    LegalAcceptanceRequest:
+      allOf:
+        - $ref: '#/components/schemas/LegalVersions'
+      description: The versions the page showed when the user pressed accept. Must equal the current versions.
     UpdateMeRequest:
       type: object
       minProperties: 1

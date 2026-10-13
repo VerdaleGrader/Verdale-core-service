@@ -63,6 +63,13 @@ export const updateSpaceBody = z
     message: 'Send at least one field to change.',
   });
 
+const legalVersion = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the version date, YYYY-MM-DD.');
+
+/** The versions of the documents the page showed when the user pressed accept (GRD-122). */
+export const legalAcceptanceBody = z
+  .object({ terms: legalVersion, privacy: legalVersion })
+  .strict();
+
 export const updateMeBody = z
   .object({
     display_name: z
