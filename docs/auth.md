@@ -82,6 +82,8 @@ One namespace: lower-case, 3 to 32 characters, `[a-z0-9_-]`, starting with a let
 
 ¹ Not in an archived Space: an archived Space is read-only (problems stay visible; nothing created, edited, published or submitted; settings and members frozen). ² The owner hands the Space over first. ³ Decided in GRD-46: the staff (owner, administrator, editor, observer) see everyone's submissions in their Space, everyone else only their own. ⁴ Hidden tests, reference solutions and the editor view; readable by the staff in an archived Space too. An **observer** is read-only staff: it reads what an editor reads but creates, edits, publishes and manages nothing, and cannot re-judge.
 
+Publish gate (M4): verify, Minor/Major updates, starting or discarding a Major draft and reading `…/verify` follow the table (`problem.update` to change, `problem.view_private` to read, so observers read the history and the verification report but change nothing; `problem.publish` for the publish itself). Solvers and visitors get 403/404 for all of them, checked before the problem is looked up.
+
 ⁵ Since GRD-81 a solver, an outsider of a public Space and a visitor reach a problem only through a Collection of a Track they can see (`problemInTrack`); the staff do not need one. Details and the exact 404 rules: [tracks.md](tracks.md). ⁶ A Track is visible when it is not archived and either open to the Space or the person was added to it; the staff see every Track, archived ones too.
 
 Public Space: a logged-in user can view and submit code. Private Space: members only. **Visitors can view public Spaces and published problems but must log in to submit** (decision 2026-10-11).
