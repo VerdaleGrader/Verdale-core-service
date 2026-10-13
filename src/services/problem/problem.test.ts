@@ -5,6 +5,7 @@ import {
   addTest,
   castSpace,
   createDraft,
+  verifyDraft,
   createPublishedProblem,
   problemUrl,
 } from '@/test/fixtures';
@@ -362,14 +363,14 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
       return t.prisma.problemVersion.findFirstOrThrow({ include: { test_cases: true } });
     }
 
-    it('PATCH answers 409 VERSION_PUBLISHED and nothing changes', async () => {
+    it('PATCH answers 409 MAJOR_FIELD_LOCKED and nothing changes', async () => {
       const before = await published();
       const response = await cast.editor.request('PATCH', problemUrl(cast.slug, 'sum'), {
         title: 'Rewritten',
         time_limit_ms: 5000,
       });
       expect(response.status).toBe(409);
-      expect(response.body.error_code).toBe('VERSION_PUBLISHED');
+      expect(response.body.error_code).toBe('MAJOR_FIELD_LOCKED');
       const after = await t.prisma.problemVersion.findFirstOrThrow();
       expect(after.title).toBe(before.title);
       expect(after.time_limit_ms).toBe(before.time_limit_ms);
@@ -407,12 +408,12 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
       await expect(
         t.prisma.problemVersion.update({
           where: { id: version.id },
-          data: { statement: 'tampered' },
+          data: { time_limit_ms: 5000 },
         })
-      ).rejects.toThrow(/published problem version cannot be changed/);
+      ).rejects.toThrow(/cannot change its Major fields/);
       await expect(
         t.prisma.problemVersion.update({ where: { id: version.id }, data: { status: 'draft' } })
-      ).rejects.toThrow(/cannot be changed/);
+      ).rejects.toThrow(/cannot change its Major fields/);
       await expect(t.prisma.problemVersion.delete({ where: { id: version.id } })).rejects.toThrow(
         /cannot be deleted/
       );
@@ -460,10 +461,12 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
       expect(response.status).toBe(409);
       expect(response.body.error_code).toBe('PUBLISH_BLOCKED');
       expect(fieldsOf(response.body).sort()).toEqual([
+        'hidden_tests',
         'sample_test',
         'solution',
         'statement',
         'tests',
+        'verified',
       ]);
       expect((await t.prisma.problem.findFirstOrThrow()).status).toBe('draft');
     });
@@ -471,11 +474,12 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
     it('needs a primary reference solution before it will publish', async () => {
       await createDraft(cast.editor, cast.slug);
       await addTest(cast.editor, cast.slug, 'sum', '1 2\n', '3\n', true);
+      await addTest(cast.editor, cast.slug, 'sum', '4 5\n', '9\n', false);
       const noSolution = await cast.editor.request(
         'POST',
         problemUrl(cast.slug, 'sum', '/publish')
       );
-      expect(fieldsOf(noSolution.body)).toEqual(['solution']);
+      expect(fieldsOf(noSolution.body)).toEqual(['solution', 'verified']);
       const solution = await cast.editor.request(
         'POST',
         problemUrl(cast.slug, 'sum', '/solutions'),
@@ -487,7 +491,7 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
       );
       expect(solution.body.is_primary).toBe(false);
       const stillNo = await cast.editor.request('POST', problemUrl(cast.slug, 'sum', '/publish'));
-      expect(fieldsOf(stillNo.body)).toEqual(['solution']);
+      expect(fieldsOf(stillNo.body)).toEqual(['solution', 'verified']);
       await cast.editor.request(
         'PATCH',
         problemUrl(cast.slug, 'sum', `/solutions/${solution.body.id}`),
@@ -495,6 +499,7 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
           is_primary: true,
         }
       );
+      await verifyDraft(cast, 'sum');
       expect(
         (await cast.editor.request('POST', problemUrl(cast.slug, 'sum', '/publish'))).status
       ).toBe(200);
@@ -508,19 +513,23 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
         source: SOLUTION_SOURCE,
       });
       const response = await cast.editor.request('POST', problemUrl(cast.slug, 'sum', '/publish'));
-      expect(fieldsOf(response.body)).toEqual(['sample_test']);
+      expect(fieldsOf(response.body)).toEqual(['sample_test', 'verified']);
     });
 
     it('the editor view reports the same checklist, and can_publish when it is all green', async () => {
       await createDraft(cast.editor, cast.slug);
       let editor = (await cast.editor.request('GET', problemUrl(cast.slug, 'sum', '/editor'))).body;
       expect(editor.can_publish).toBe(false);
-      expect(editor.publish_checks.filter((check: { ok: boolean }) => !check.ok)).toHaveLength(3);
+      expect(editor.publish_checks.filter((check: { ok: boolean }) => !check.ok)).toHaveLength(5);
       await addTest(cast.editor, cast.slug, 'sum', '1 2\n', '3\n', true);
+      await addTest(cast.editor, cast.slug, 'sum', '4 5\n', '9\n', false);
       await cast.editor.request('POST', problemUrl(cast.slug, 'sum', '/solutions'), {
         language: 'cpp',
         source: SOLUTION_SOURCE,
       });
+      editor = (await cast.editor.request('GET', problemUrl(cast.slug, 'sum', '/editor'))).body;
+      expect(editor.can_publish).toBe(false);
+      await verifyDraft(cast, 'sum');
       editor = (await cast.editor.request('GET', problemUrl(cast.slug, 'sum', '/editor'))).body;
       expect(editor.can_publish).toBe(true);
       expect(editor.publish_checks.every((check: { ok: boolean }) => check.ok)).toBe(true);
@@ -633,6 +642,8 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
         'time_limit_ms',
         'title',
         'updated_at',
+        'version_label',
+        'version_minor',
         'version_number',
       ]);
       expect(items[0].created_by).toEqual({
@@ -695,6 +706,8 @@ describeDb('Problems (GRD-21, 22, 47)', () => {
           'status',
           'time_limit_ms',
           'title',
+          'version_label',
+          'version_minor',
           'version_number',
         ]);
       }

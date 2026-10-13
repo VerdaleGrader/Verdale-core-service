@@ -3,6 +3,7 @@ import {
   addTest,
   castSpace,
   createDraft,
+  verifyDraft,
   createPublishedProblem,
   problemUrl,
 } from '@/test/fixtures';
@@ -346,6 +347,7 @@ describeDb('The testcases page: one save, previews and Generate (GRD-108)', () =
         ],
       });
       expect(fixed.body.summary.missing_output_count).toBe(0);
+      await verifyDraft(cast, 'sum');
       expect((await cast.editor.request('POST', url('/publish'))).status).toBe(200);
     });
 

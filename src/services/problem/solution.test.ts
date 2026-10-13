@@ -6,6 +6,7 @@ import {
   castSpace,
   createDraft,
   createPublishedProblem,
+  verifyDraft,
   problemUrl,
 } from '@/test/fixtures';
 import { createTestApp, describeDb, resetDatabase, TestApp } from '@/test/harness';
@@ -82,7 +83,9 @@ describeDb('Reference solutions (GRD-26)', () => {
     const publish = await cast.editor.request('POST', problemUrl(cast.slug, 'sum', '/publish'));
     expect(publish.status).toBe(409);
     expect(publish.body.details.map((detail: { field: string }) => detail.field)).toEqual([
+      'hidden_tests',
       'solution',
+      'verified',
     ]);
   });
 
@@ -169,10 +172,12 @@ describeDb('Reference solutions (GRD-26)', () => {
       const secret = 'THE_ANSWER_KEY_42';
       await createDraft(cast.editor, cast.slug, 'guarded');
       await addTest(cast.editor, cast.slug, 'guarded', '1 2\n', '3\n', true);
+      await addTest(cast.editor, cast.slug, 'guarded', '4 5\n', '9\n', false);
       await cast.editor.request('POST', problemUrl(cast.slug, 'guarded', '/solutions'), {
         language: 'python',
         source: `# ${secret}\nprint(3)\n`,
       });
+      await verifyDraft(cast, 'guarded');
       expect(
         (await cast.editor.request('POST', problemUrl(cast.slug, 'guarded', '/publish'))).status
       ).toBe(200);
