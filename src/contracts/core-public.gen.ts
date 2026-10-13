@@ -142,6 +142,32 @@ export interface paths {
     patch: operations['updateMe'];
     trace?: never;
   };
+  '/api/v1/me/legal-acceptance': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept the Terms and the Privacy Policy
+     * @description Records that the signed-in user accepted the versions of the Terms and the Privacy Policy that the page showed (GRD-122).
+     *     Only the user, the document, its version and the time are stored. Idempotent.
+     *     `409 LEGAL_VERSION_CHANGED` when a version is no longer current (the page was open while the documents were
+     *     republished): reload, read, and accept again.
+     *     Until a signed-in user has accepted the current versions, every other call that carries their session answers
+     *     `403 LEGAL_ACCEPTANCE_REQUIRED`; only `GET /api/v1/me`, this call and `/api/v1/auth/*` (log out) stay open.
+     *     A user who signs in for the first time has both documents recorded as part of creating the account.
+     */
+    post: operations['acceptLegal'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/users/{username}': {
     parameters: {
       query?: never;
@@ -1810,7 +1836,26 @@ export interface components {
       avatar_url: string | null;
       /** Format: date-time */
       created_at: string;
+      legal: components['schemas']['LegalStatus'];
     };
+    /** @description The version of each document is its effective date (YYYY-MM-DD). */
+    LegalVersions: {
+      /** @example 2026-10-13 */
+      terms: string;
+      /** @example 2026-10-13 */
+      privacy: string;
+    };
+    /** @description Whether the user has accepted the current Terms and Privacy Policy (GRD-122). */
+    LegalStatus: {
+      /**
+       * @description True until the user has accepted both current versions. While true, every call except
+       *     `GET /api/v1/me`, `POST /api/v1/me/legal-acceptance` and `/api/v1/auth/*` answers 403 LEGAL_ACCEPTANCE_REQUIRED.
+       */
+      acceptance_required: boolean;
+      current_versions: components['schemas']['LegalVersions'];
+    };
+    /** @description The versions the page showed when the user pressed accept. Must equal the current versions. */
+    LegalAcceptanceRequest: components['schemas']['LegalVersions'];
     UpdateMeRequest: {
       /** @description No line breaks or other control characters. At most 10 changes a minute (429 after that). */
       display_name?: string;
@@ -3157,6 +3202,33 @@ export interface operations {
     };
     responses: {
       /** @description Updated account */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  acceptLegal: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['LegalAcceptanceRequest'];
+      };
+    };
+    responses: {
+      /** @description The account, with the acceptance now recorded */
       200: {
         headers: {
           [name: string]: unknown;

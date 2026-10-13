@@ -28,6 +28,7 @@ import AuthController from '@/controllers/auth/auth.controller';
 import SystemController from '@/controllers/system/system.controller';
 import InviteController from '@/controllers/space/invite.controller';
 import SpaceController from '@/controllers/space/space.controller';
+import LegalController from '@/controllers/legal/legal.controller';
 import UserController from '@/controllers/user/user.controller';
 import { OAuthProviders } from '@/libs/oauth';
 import { SESSION_COOKIE } from '@/middleware/session';
@@ -36,6 +37,7 @@ import InviteRepository from '@/repositories/invite.repository';
 import ProblemRepository from '@/repositories/problem.repository';
 import HistoryRepository from '@/repositories/history.repository';
 import VerificationRepository from '@/repositories/verification.repository';
+import LegalRepository from '@/repositories/legal.repository';
 import SessionRepository from '@/repositories/session.repository';
 import SolutionRepository from '@/repositories/solution.repository';
 import SpaceRepository from '@/repositories/space.repository';
@@ -45,6 +47,7 @@ import TestCaseRepository from '@/repositories/test-case.repository';
 import TrackRepository from '@/repositories/track.repository';
 import UserRepository from '@/repositories/user.repository';
 import AuthService from '@/services/auth/auth.service';
+import LegalService, { LegalAcceptanceRequiredError } from '@/services/legal/legal.service';
 import ImageService from '@/services/problem/image.service';
 import ProblemService from '@/services/problem/problem.service';
 import SolutionService from '@/services/problem/solution.service';
@@ -196,6 +199,15 @@ export function buildApp({ version, readinessChecks, api }: AppDependencies) {
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/** Calls a user may make before accepting the current legal documents (GRD-122). */
+function isLegalExempt(request: FastifyRequest): boolean {
+  const path = (request.url.split('?')[0] ?? '').replace(/\/+$/, '');
+  if (request.method === 'GET' && path === '/api/v1/me') return true;
+  if (request.method === 'POST' && path === '/api/v1/me/legal-acceptance') return true;
+  // Sign-in, sign-out and the provider list: a user must be able to leave or switch account.
+  return path.startsWith('/api/v1/auth/');
+}
+
 /**
  * Accounts, Spaces, members and invitations under /api/v1. The Frontend
  * proxies /api/* here, so browsers only ever see the web app's origin.
@@ -221,12 +233,14 @@ function registerApi(
   const trackRepository = new TrackRepository();
   const auditRepository = new AuditRepository();
 
+  const legalService = new LegalService(prisma, new LegalRepository(), now);
   const authService = new AuthService(
     prisma,
     userRepository,
     sessionRepository,
     spaceRepository,
     trackRepository,
+    legalService,
     oauthProviders,
     auth,
     now
@@ -414,7 +428,8 @@ function registerApi(
   );
   const submissionReviewController = new SubmissionReviewController(submissionReviewService);
   const judgeResultController = new JudgeResultController(judgeResultService);
-  const userController = new UserController(userService);
+  const userController = new UserController(userService, legalService);
+  const legalController = new LegalController(userService, legalService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
   const inviteController = new InviteController(inviteService);
   const trackController = new TrackController(
@@ -477,6 +492,16 @@ function registerApi(
         throw new ForbiddenError('Cross-site request rejected.');
       }
       request.currentUser = await authService.authenticate(token);
+
+      // GRD-122: after the Terms or the Privacy Policy change, a signed-in
+      // user can do nothing but read /me, accept, or log out until they accept.
+      if (
+        request.currentUser &&
+        !isLegalExempt(request) &&
+        !(await legalService.hasAcceptedCurrent(request.currentUser.id))
+      ) {
+        throw new LegalAcceptanceRequiredError();
+      }
     });
 
     const signInLimit = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
@@ -513,6 +538,7 @@ function registerApi(
           }
         };
         v1.get('/me', userController.me.bind(userController));
+        v1.post('/me/legal-acceptance', legalController.accept.bind(legalController));
         v1.patch('/me', { preHandler: profileLimit }, userController.updateMe.bind(userController));
         v1.get('/me/spaces', spaceController.listMine.bind(spaceController));
         v1.get('/me/invites', inviteController.listMine.bind(inviteController));
