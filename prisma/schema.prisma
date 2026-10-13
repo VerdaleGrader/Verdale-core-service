@@ -35,6 +35,8 @@ model User {
   track_memberships     TrackMember[]
   audit_entries         AuditLog[]
   generate_jobs_created GenerateJob[]       @relation("GenerateJobAuthor")
+  verification_runs     VerificationRun[]   @relation("VerificationRequester")
+  history_entries       ProblemHistory[]    @relation("HistoryActor")
 
   @@map("users")
 }
@@ -180,10 +182,29 @@ enum ProblemStatus {
   archived
 }
 
-// A published version never changes (enforced in services and by a trigger).
+// draft -> verifying -> verified -> published (GRD-50). A published version's
+// Major fields never change (services and a trigger); only a Minor update edits
+// its Minor fields in place.
 enum ProblemVersionStatus {
   draft
+  verifying
+  verified
   published
+}
+
+enum VerificationStatus {
+  queued
+  running
+  passed
+  failed
+  error
+}
+
+enum ProblemHistoryType {
+  minor_update
+  major_draft_created
+  major_draft_discarded
+  state_change
 }
 
 enum StatementMode {
@@ -212,6 +233,7 @@ model Problem {
   versions           ProblemVersion[]    @relation("VersionOfProblem")
   submissions        Submission[]
   collection_entries CollectionProblem[]
+  history            ProblemHistory[]
 
   @@unique([space_id, slug])
   // Problem lists of a Space by status, newest change first.
@@ -223,7 +245,10 @@ model Problem {
 model ProblemVersion {
   id                       String               @id @default(uuid()) @db.Uuid
   problem_id               String               @db.Uuid
+  // The Major (v1.0 is the first publish). A new Major is a new row.
   version_number           Int
+  // Bumped by each Minor update of a published version; 0 on a new Major.
+  minor                    Int                  @default(0)
   status                   ProblemVersionStatus @default(draft)
   title                    String               @db.VarChar(200)
   // Markdown with KaTeX maths. Drafts may be empty; publishing requires text.
@@ -248,9 +273,70 @@ model ProblemVersion {
   reference_solutions ReferenceSolution[]
   submissions         Submission[]
   generate_jobs       GenerateJob[]
+  verification_runs   VerificationRun[]
+  history             ProblemHistory[]
 
   @@unique([problem_id, version_number])
   @@map("problem_versions")
+}
+
+// A run of the reference solution against every test on Judge (GRD-51). Bound
+// to the content it was started with by `content_hash`; a later change to the
+// tests, solutions, limits or languages makes it stale.
+model VerificationRun {
+  id                 String             @id @default(uuid()) @db.Uuid
+  problem_version_id String             @db.Uuid
+  requested_by_id    String             @db.Uuid
+  status             VerificationStatus @default(queued)
+  content_hash       String             @db.VarChar(64)
+  judge_job_id       String?            @unique @db.Uuid
+  verdict            Verdict?
+  reason             String?            @db.VarChar(500)
+  // [{ position, verdict, time_ms, memory_kb, is_sample }]
+  results            Json               @default("[]")
+  tests_total        Int
+  tests_passed       Int?
+  max_time_ms        Int?
+  max_memory_kb      Int?
+  attempts           Int                @default(0)
+  next_dispatch_at   DateTime?          @db.Timestamptz(3)
+  created_at         DateTime           @default(now()) @db.Timestamptz(3)
+  finished_at        DateTime?          @db.Timestamptz(3)
+  // After this the run is closed as an error, so a version never sticks in `verifying`.
+  deadline_at        DateTime           @db.Timestamptz(3)
+
+  version      ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  requested_by User           @relation("VerificationRequester", fields: [requested_by_id], references: [id])
+
+  @@index([problem_version_id, created_at(sort: Desc)])
+  @@index([status, next_dispatch_at])
+  @@index([status, deadline_at])
+  @@map("verification_runs")
+}
+
+// Who did what to a problem and when: Minor updates, Major drafts and every
+// state change (GRD-50, GRD-117).
+model ProblemHistory {
+  id                 String                @id @default(uuid()) @db.Uuid
+  problem_id         String                @db.Uuid
+  // Null once a discarded draft is gone.
+  problem_version_id String?               @db.Uuid
+  type               ProblemHistoryType
+  actor_id           String                @db.Uuid
+  at                 DateTime              @default(now()) @db.Timestamptz(3)
+  label              String                @db.VarChar(32)
+  forced             Boolean               @default(false)
+  // [{ field, old, new }]; text is cut to 2000 characters.
+  changes            Json                  @default("[]")
+  state_from         ProblemVersionStatus?
+  state_to           ProblemVersionStatus?
+
+  problem Problem         @relation(fields: [problem_id], references: [id], onDelete: Cascade)
+  version ProblemVersion? @relation(fields: [problem_version_id], references: [id], onDelete: SetNull)
+  actor   User            @relation("HistoryActor", fields: [actor_id], references: [id])
+
+  @@index([problem_id, at(sort: Desc)])
+  @@map("problem_history")
 }
 
 // One test: an input file and an expected output file in the private test
