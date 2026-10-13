@@ -1,0 +1,26 @@
+# Deployed by Jenkins (see Jenkinsfile). Settings come from the .env file the
+# pipeline copies from the `verdale-core-service-prod` credential.
+# Local development uses docker-compose.yml instead.
+
+services:
+  app:
+    build: .
+    image: verdale-core-service:${BUILD_VERSION:-dev}
+    container_name: verdale-core-service
+    restart: always
+    env_file: .env
+    ports:
+      - "${PORT:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - verdale-core-network
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - verdale-core-network
+networks:
+  verdale-core-network:
+    driver: bridge
