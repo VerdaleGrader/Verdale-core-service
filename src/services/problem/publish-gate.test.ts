@@ -216,7 +216,8 @@ describeDb('Publish gate and versions (GRD-50 to GRD-54, GRD-116, GRD-117)', () 
       expect(entry).toMatchObject({ label: 'v1.1', actor: { username: 'edith' } });
       expect(entry.changes.map((c: { field: string }) => c.field)).toEqual(['title', 'statement']);
       expect(entry.changes[0]).toMatchObject({ old: 'Sum of two numbers', new: 'Sum of two' });
-      expect(t.judge.jobs.filter((job) => job.kind === 'verify')).toHaveLength(1);
+      // A Minor update asks for no verification.
+      expect(t.judge.jobs.filter((job) => job.kind === 'verify')).toHaveLength(0);
     });
 
     it('refuses a stale expected_version, an empty statement and a solver', async () => {

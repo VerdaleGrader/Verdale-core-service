@@ -151,6 +151,8 @@ export async function verifyDraft(
   }
   await cast.app.settle();
   const job = cast.app.judge.last;
+  // The verify job is not what the test is about: take it off the fake Judge's list.
+  cast.app.judge.jobs = cast.app.judge.jobs.filter((candidate) => candidate !== job);
   const delivered = await cast.app.deliver(jobResult(job, { kind: 'verify', ...override }));
   if (delivered.status !== 204) {
     throw new Error(`verify result refused: ${delivered.status} ${JSON.stringify(delivered.body)}`);
