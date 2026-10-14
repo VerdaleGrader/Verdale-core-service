@@ -133,7 +133,11 @@ export default class JudgeResultService {
     if (!parsed.success) {
       logger.warn({
         message: 'Judge callback has an unexpected shape',
-        data: { issues: parsed.error.issues.slice(0, 5).map((issue) => issue.path.join('.')) },
+        data: {
+          issues: parsed.error.issues
+            .slice(0, 10)
+            .map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+        },
       });
       throw unprocessable('The result does not match the contract.');
     }
@@ -203,6 +207,16 @@ export default class JudgeResultService {
       for (const test of result.tests) {
         const known = cases.get(test.id);
         if (!known || seen.has(test.id)) {
+          logger.warn({
+            message: 'Judge result mentions an unknown or repeated test',
+            data: {
+              jobId: result.job_id,
+              submissionId: submission.id,
+              testId: test.id,
+              repeated: seen.has(test.id),
+              versionId: submission.problem_version_id,
+            },
+          });
           throw unprocessable(
             `The result mentions a test (${test.id}) that is not part of this problem version.`
           );
@@ -262,6 +276,20 @@ export default class JudgeResultService {
     if (outcome.kind === 'duplicate') {
       logger.info({ message: 'duplicate Judge result ignored', data: { jobId: result.job_id } });
       return 'duplicate';
+    }
+    if (result.verdict === 'ISE') {
+      // The submitter only sees "Internal error"; the reason Judge gave is kept here.
+      logger.error({
+        message: 'Judge reported an internal error',
+        data: {
+          submissionId: outcome.id,
+          jobId: result.job_id,
+          errorCode: result.error?.code,
+          errorMessage: result.error?.message,
+          judgeVersion: result.judge_version,
+          testVerdicts: result.tests.map((test) => `${test.id}:${test.verdict}`),
+        },
+      });
     }
     logger.info({
       message: 'Judge result stored',

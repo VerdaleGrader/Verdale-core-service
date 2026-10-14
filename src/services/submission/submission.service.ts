@@ -6,6 +6,7 @@ import {
   NotFoundError,
   UnauthorizedError,
   ValidationError,
+  VError,
 } from '@/errors';
 import { can } from '@/permissions/can';
 import TLogger, { Layer } from '@/logging/logger';
@@ -63,6 +64,36 @@ export default class SubmissionService {
 
   /** Accepts the code, records it as queued, and returns before Judge has looked at it. */
   async create(
+    user: User,
+    slug: string,
+    problemSlug: string,
+    input: CreateSubmissionInput,
+    requestId: string
+  ): Promise<SubmissionSummaryDto> {
+    const logger = this.logger.setContext('service.submission.create', requestId);
+    try {
+      return await this.accept(user, slug, problemSlug, input, requestId);
+    } catch (error) {
+      // Expected refusals (404, 403, 409, 400) are the caller's doing; the rest is ours to explain.
+      if (!(error instanceof VError) || error.status >= 500) {
+        logger.error({
+          message: 'submission failed',
+          data: {
+            userId: user.id,
+            space: slug,
+            problem: problemSlug,
+            language: input.language,
+            sourceBytes: Buffer.byteLength(input.source, 'utf8'),
+            track: input.track,
+          },
+          error: error as Error,
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async accept(
     user: User,
     slug: string,
     problemSlug: string,

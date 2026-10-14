@@ -92,8 +92,17 @@ export default class JudgeDispatcher {
     ]);
     // A published version has an output for every test (the database insists); never send half a job.
     if (!version || tests.length === 0 || tests.some((test) => !test.output_sha256)) {
+      logger.error({
+        message: 'submission has no version or no tests',
+        data: {
+          submissionId,
+          versionId: submission.problem_version_id,
+          versionFound: Boolean(version),
+          testCount: tests.length,
+          testsWithoutOutput: tests.filter((test) => !test.output_sha256).map((test) => test.id),
+        },
+      });
       await this.giveUp(submissionId, 'JOB_INVALID');
-      logger.error({ message: 'submission has no version or no tests', data: { submissionId } });
       return;
     }
 
@@ -110,6 +119,17 @@ export default class JudgeDispatcher {
     });
 
     try {
+      logger.info({
+        message: 'handing job to Judge',
+        data: {
+          submissionId,
+          jobId,
+          language: submission.language,
+          tests: tests.length,
+          sourceBytes: submission.source_bytes,
+          attempt: submission.dispatch_attempts + 1,
+        },
+      });
       await this.judge.createJob(request);
       await this.submissions.markDispatched(this.prisma, submissionId, this.now());
       logger.info({ message: 'job accepted by Judge', data: { submissionId, jobId } });
@@ -123,7 +143,14 @@ export default class JudgeDispatcher {
         await this.giveUp(submissionId, 'JUDGE_REJECTED');
         return;
       }
-      if (!(error instanceof JudgeUnavailableError)) throw error;
+      if (!(error instanceof JudgeUnavailableError)) {
+        logger.error({
+          message: 'unexpected error while handing the job to Judge',
+          data: { submissionId, jobId },
+          error: error as Error,
+        });
+        throw error;
+      }
       const waitedMs = this.now().getTime() - submission.created_at.getTime();
       if (waitedMs >= this.giveUpMs) {
         logger.error({

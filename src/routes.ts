@@ -173,7 +173,16 @@ export function buildApp({ version, readinessChecks, api }: AppDependencies) {
         error_code: error.code ?? 'BAD_REQUEST',
       });
     } else {
-      logger.setContext('http.error', request.id).error({ message: 'Unhandled error', error });
+      logger.setContext('http.error', request.id).error({
+        message: 'Unhandled error',
+        data: {
+          method: request.method,
+          path: request.url,
+          params: request.params,
+          userId: (request as { user?: { id?: string } }).user?.id,
+        },
+        error,
+      });
       appError = new InternalServerError();
     }
     return reply.status(appError.status).send(appError.toJSON(request.id));

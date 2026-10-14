@@ -9,6 +9,20 @@ export enum Layer {
   OTHER = 'other',
 }
 
+/** What is worth keeping of a thrown value: Prisma and Node errors carry `code`, `meta` and `cause`. */
+function describeError(error: Error | string): unknown {
+  if (!(error instanceof Error)) return error;
+  const detail = error as Error & { code?: unknown; meta?: unknown; cause?: unknown };
+  return {
+    name: error.name,
+    message: error.message,
+    code: detail.code,
+    meta: detail.meta,
+    cause: detail.cause instanceof Error ? describeError(detail.cause) : detail.cause,
+    stack: error.stack,
+  };
+}
+
 interface LogMeta {
   message: string;
   data?: Record<string, unknown>;
@@ -42,10 +56,7 @@ export default class TLogger {
       context: this.context,
       request_id: this.requestId || undefined,
       data: meta.data,
-      error:
-        meta.error instanceof Error
-          ? { message: meta.error.message, stack: meta.error.stack }
-          : meta.error,
+      error: meta.error === undefined ? undefined : describeError(meta.error),
     };
   }
 
