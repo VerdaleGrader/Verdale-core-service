@@ -9,6 +9,22 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.10.0 (2026-10-15)
+
+- Additive. AI testcase generation, bring your own key (GRD-124). Judge is unchanged (its version is bumped only to keep the two files in step): Core uses the existing `generate` job kind.
+  - **Keys.** `GET /me/ai-credentials` (`AiCredentialList`: provider and last four characters, never the key; `enabled` is false when the server has no encryption key), `PUT` and `DELETE /me/ai-credentials/{provider}` (`gemini` or `claude`).
+  - **Drafting.** `POST .../ai-tests` (`StartAiTestsRequest`: `provider`, `count`, optional `categories`, optional `note` (extra instructions, up to 1000 characters), `solution_id`, `include_solution` off by default) and `GET .../ai-tests/{jobId}` (`AiTestJob`: `generating`, `computing`, `completed` or `failed`; items with `input_text`, `output`, `output_preview` and `skip_reason`). Drafts are never testcases until `saveTestCases` refers to their hashes. Errors: 409 `AI_KEY_MISSING`, `AI_KEY_UNREADABLE`, `AI_TEST_RUNNING`; job errors `AI_KEY_INVALID`, `AI_QUOTA_EXCEEDED`, `AI_BAD_RESPONSE`, `AI_UNAVAILABLE`.
+
+## 0.9.0 (2026-10-13)
+
+- Additive. Terms and Privacy Policy acceptance (GRD-122):
+  - `Me.legal` (`LegalStatus`): `acceptance_required` and `current_versions` (`LegalVersions`: `terms`, `privacy`, each an effective date `YYYY-MM-DD`). Present on `GET /api/v1/me`, `PATCH /api/v1/me` and the accept response.
+  - `POST /api/v1/me/legal-acceptance` (`LegalAcceptanceRequest`): records that the user accepted the versions the page showed. 409 `LEGAL_VERSION_CHANGED` if a version is no longer current.
+  - Until a signed-in user has accepted the current versions, every call that carries their session answers 403 `LEGAL_ACCEPTANCE_REQUIRED`, except `GET /api/v1/me`, the accept call and `/api/v1/auth/*`. Frontend sends the user to `/accept-terms`.
+  - First sign-in records both documents in the same transaction as the user, the personal Space and the session.
+- Error codes added: `LEGAL_ACCEPTANCE_REQUIRED`, `LEGAL_VERSION_CHANGED`.
+- Deploy order: Core first (migration `legal_acceptances`; every existing user is asked to accept once), then Frontend re-pins with `contracts:sync`. A Frontend built before this change would show errors for a signed-in user until the new one is deployed, so deploy the two together. Judge needs no deploy; its contract only has its version bumped.
+
 ## 0.8.0 (2026-10-13)
 
 - Additive. Publish gate and versions (GRD-50 to GRD-54, GRD-116, GRD-117):

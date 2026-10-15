@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.8.0
+  version: 0.10.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -125,6 +125,76 @@ paths:
           description: Logged out (also when there was no session)
         '403':
           $ref: '#/components/responses/Error'
+  /api/v1/me/ai-credentials:
+    get:
+      operationId: listAiCredentials
+      tags: [users]
+      summary: My saved AI provider keys (GRD-124)
+      description: |
+        Only the provider and the last four characters of each key; the key itself is never
+        returned. `enabled` is false when the server has no encryption key set up, and the
+        feature is then off.
+      security:
+        - session: []
+      responses:
+        '200':
+          description: The keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiCredentialList'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/ai-credentials/{provider}:
+    put:
+      operationId: saveAiCredential
+      tags: [users]
+      summary: Save or replace my key for one AI provider (GRD-124)
+      description: |
+        The key is encrypted before it is stored and used only by Core, for the calls made on
+        the author's behalf. Answers 503 when the feature is not set up on the server.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/AiProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveAiCredentialRequest'
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiCredential'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteAiCredential
+      tags: [users]
+      summary: Remove my key for one AI provider (GRD-124)
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/AiProvider'
+      responses:
+        '204':
+          description: Removed (also when there was none)
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
   /api/v1/me:
     get:
       operationId: getMe
@@ -159,6 +229,40 @@ paths:
       responses:
         '200':
           description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/me/legal-acceptance:
+    post:
+      operationId: acceptLegal
+      tags: [users]
+      summary: Accept the Terms and the Privacy Policy
+      description: |
+        Records that the signed-in user accepted the versions of the Terms and the Privacy Policy that the page showed (GRD-122).
+        Only the user, the document, its version and the time are stored. Idempotent.
+        `409 LEGAL_VERSION_CHANGED` when a version is no longer current (the page was open while the documents were
+        republished): reload, read, and accept again.
+        Until a signed-in user has accepted the current versions, every other call that carries their session answers
+        `403 LEGAL_ACCEPTANCE_REQUIRED`; only `GET /api/v1/me`, this call and `/api/v1/auth/*` (log out) stay open.
+        A user who signs in for the first time has both documents recorded as part of creating the account.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalAcceptanceRequest'
+      responses:
+        '200':
+          description: The account, with the acceptance now recorded
           content:
             application/json:
               schema:
@@ -1757,6 +1861,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GenerateJob'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/ai-tests:
+    post:
+      operationId: startAiTests
+      tags: [tests]
+      summary: Draft testcases with AI (owner, administrator or editor) (GRD-124)
+      description: |
+        A model (Gemini or Claude, with the author's own saved key) writes `count` inputs from
+        the statement; Core checks and stores them, then runs the chosen reference solution on
+        Judge to get the expected outputs. Only the statement and limits are sent to the
+        provider; the solution's code is sent only when `include_solution` is true. Nothing is
+        added to the problem: the drafts go into `saveTestCases` when the author confirms.
+        Answers 202 with the job; follow it with `getAiTests`. One job at a time per problem
+        (409 `AI_TEST_RUNNING`); 409 `AI_KEY_MISSING` when there is no saved key for the
+        provider, 409 `AI_KEY_UNREADABLE` when it must be saved again; 400 when the statement is
+        empty (a PDF statement is sent to the model as a document); 429 `RATE_LIMITED`; 503 when the feature is not set up on the server.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAiTestsRequest'
+      responses:
+        '202':
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTestJob'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/ai-tests/{jobId}:
+    get:
+      operationId: getAiTests
+      tags: [tests]
+      summary: Progress and drafts of an AI testcase job (owner, administrator, editor, observer) (GRD-124)
+      description: |
+        Poll it while `status` is `generating` or `computing`. Items carry their text only once
+        the job is `completed`. Finished jobs are kept for 24 hours.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: The job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTestJob'
         '400':
           $ref: '#/components/responses/Error'
         '401':
@@ -3371,6 +3551,12 @@ components:
       schema:
         type: string
         format: uuid
+    AiProvider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/AiProvider'
   schemas:
     OAuthProvider:
       type: string
@@ -3385,7 +3571,7 @@ components:
     Me:
       type: object
       description: The account owner's view. Other users never see `id` or `email`.
-      required: [id, email, username, display_name, avatar_url, created_at]
+      required: [id, email, username, display_name, avatar_url, created_at, legal]
       properties:
         id:
           type: string
@@ -3405,6 +3591,37 @@ components:
         created_at:
           type: string
           format: date-time
+        legal:
+          $ref: '#/components/schemas/LegalStatus'
+    LegalVersions:
+      type: object
+      description: The version of each document is its effective date (YYYY-MM-DD).
+      required: [terms, privacy]
+      properties:
+        terms:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          example: '2026-10-13'
+        privacy:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+          example: '2026-10-13'
+    LegalStatus:
+      type: object
+      description: Whether the user has accepted the current Terms and Privacy Policy (GRD-122).
+      required: [acceptance_required, current_versions]
+      properties:
+        acceptance_required:
+          type: boolean
+          description: |
+            True until the user has accepted both current versions. While true, every call except
+            `GET /api/v1/me`, `POST /api/v1/me/legal-acceptance` and `/api/v1/auth/*` answers 403 LEGAL_ACCEPTANCE_REQUIRED.
+        current_versions:
+          $ref: '#/components/schemas/LegalVersions'
+    LegalAcceptanceRequest:
+      allOf:
+        - $ref: '#/components/schemas/LegalVersions'
+      description: The versions the page showed when the user pressed accept. Must equal the current versions.
     UpdateMeRequest:
       type: object
       minProperties: 1
@@ -5551,6 +5768,162 @@ components:
           type: string
           format: date-time
           nullable: true
+    AiProvider:
+      type: string
+      enum: [gemini, claude]
+    AiCredential:
+      type: object
+      required: [provider, last4]
+      properties:
+        provider:
+          $ref: '#/components/schemas/AiProvider'
+        last4:
+          type: string
+          description: The last four characters of the key, the only part ever shown
+    AiCredentialList:
+      type: object
+      required: [enabled, items]
+      properties:
+        enabled:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiCredential'
+    SaveAiCredentialRequest:
+      type: object
+      required: [api_key]
+      properties:
+        api_key:
+          type: string
+          description: The provider's API key, 8 to 512 characters with no spaces
+    StartAiTestsRequest:
+      type: object
+      required: [provider, count, solution_id]
+      properties:
+        provider:
+          $ref: '#/components/schemas/AiProvider'
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+        categories:
+          type: array
+          description: Optional. Left empty, the model follows the statement.
+          items:
+            type: string
+            enum: [edge, max, random]
+        solution_id:
+          type: string
+          format: uuid
+          description: The reference solution that produces the expected outputs
+        note:
+          type: string
+          maxLength: 1000
+          description: Optional extra instructions for the model, added to the prompt. Never changes the rules that keep the answer valid.
+        include_solution:
+          type: boolean
+          default: false
+          description: Also send the solution's code to the provider. Off unless the author turns it on.
+    AiTestFile:
+      type: object
+      required: [sha256, size_bytes]
+      properties:
+        sha256:
+          type: string
+        size_bytes:
+          type: integer
+    AiTestItem:
+      type: object
+      required: [id, position, status, input, input_text, output, output_preview, skip_reason]
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+        status:
+          type: string
+          enum: [pending, ok, skipped]
+        input:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AiTestFile'
+        input_text:
+          type: string
+          nullable: true
+          description: The generated input; only once the job is `completed`
+        output:
+          nullable: true
+          description: The expected output Judge produced, ready to go into `saveTestCases`
+          allOf:
+            - $ref: '#/components/schemas/AiTestFile'
+        output_preview:
+          type: string
+          nullable: true
+          description: The first characters of the expected output; only once the job is `completed`
+        skip_reason:
+          type: string
+          nullable: true
+          description: Why the item cannot be used (a format problem, or what happened when the solution ran on it)
+    AiTestJob:
+      type: object
+      required:
+        [
+          id,
+          status,
+          provider,
+          requested_count,
+          error,
+          created_at,
+          deadline_at,
+          finished_at,
+          usable_count,
+          skipped_count,
+          items,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [generating, computing, completed, failed]
+        provider:
+          $ref: '#/components/schemas/AiProvider'
+        requested_count:
+          type: integer
+        error:
+          type: object
+          nullable: true
+          description: |
+            Set when the job failed as a whole: `AI_KEY_INVALID`, `AI_QUOTA_EXCEEDED`,
+            `AI_BAD_RESPONSE`, `AI_UNAVAILABLE`, `COMPILE_ERROR`, `JUDGE_UNAVAILABLE`,
+            `JUDGE_REJECTED`, `JUDGE_ERROR`, `TIMED_OUT` or `INTERNAL_ERROR`
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+        created_at:
+          type: string
+          format: date-time
+        deadline_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        usable_count:
+          type: integer
+        skipped_count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiTestItem'
     GenerateJob:
       type: object
       required: [id, status, error, created_at, deadline_at, finished_at, progress, runs]

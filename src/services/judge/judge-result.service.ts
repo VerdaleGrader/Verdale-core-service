@@ -6,6 +6,7 @@ import { verify } from '@/libs/hmac';
 import TLogger, { Layer } from '@/logging/logger';
 import SubmissionRepository, { SubmissionResultInput } from '@/repositories/submission.repository';
 import TestCaseRepository from '@/repositories/test-case.repository';
+import AiTestService from '@/services/problem/ai-test.service';
 import GenerateService from '@/services/problem/generate.service';
 import VerificationService from '@/services/problem/verification.service';
 
@@ -92,6 +93,7 @@ export default class JudgeResultService {
     private readonly callbackKeys: Record<string, string>,
     private readonly generate: GenerateService,
     private readonly verification: VerificationService,
+    private readonly aiTests: AiTestService,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -154,7 +156,19 @@ export default class JudgeResultService {
         },
         requestId
       );
-      if (!known) throw new NotFoundError('Unknown job.');
+      if (known) return 'stored';
+      // Not an expected-output job: it may be an AI testcase job (GRD-124), which also runs as "generate".
+      const aiKnown = await this.aiTests.receive(
+        {
+          job_id: result.job_id,
+          verdict: result.verdict,
+          compile: result.compile,
+          tests: result.tests,
+          error: result.error,
+        },
+        requestId
+      );
+      if (!aiKnown) throw new NotFoundError('Unknown job.');
       return 'stored';
     }
     if (result.kind === 'verify') {

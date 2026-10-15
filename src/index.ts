@@ -3,6 +3,8 @@ import { ConfigError, loadConfig } from '@/config';
 import { configureLogger, flushLogs, logger as rootLogger } from '@/libs/winston';
 import { HttpJudgeClient } from '@/libs/judge';
 import { createOAuthProviders } from '@/libs/oauth';
+import { HttpAiClient } from '@/libs/ai-provider';
+import SecretBox from '@/libs/crypto';
 import { createStorages } from '@/libs/storage';
 import { createDatabase } from '@/libs/prisma';
 import TLogger, { Layer } from '@/logging/logger';
@@ -35,6 +37,10 @@ async function main() {
       judge: { client: new HttpJudgeClient(config.judge), config: config.judge },
       publicAssetBaseUrl: config.storage.publicAssetBaseUrl,
       publish: config.publish,
+      ai: {
+        client: new HttpAiClient({ models: config.ai.models }),
+        secretBox: config.ai.keyring ? new SecretBox(config.ai.keyring) : undefined,
+      },
     },
   });
   if (!config.judge.signing) {
@@ -46,6 +52,8 @@ async function main() {
   app.dispatcher?.start();
   // Keeps "generate expected output" jobs moving and removes old ones.
   app.generator?.startLoop();
+  // Fails AI testcase jobs that outlived their deadline and removes old ones.
+  app.aiTester?.startLoop();
   if (Object.keys(config.auth.providers).length === 0) {
     logger.warn({ message: 'No OAuth provider is configured: nobody can log in' });
   }
@@ -64,6 +72,7 @@ async function main() {
       await app.close(); // stop accepting requests, finish in-flight ones
       await app.dispatcher?.stop(); // finish hand-overs to Judge that are under way
       await app.generator?.stopLoop();
+      await app.aiTester?.stopLoop();
       await database.close();
       logger.info({ message: 'Shutdown complete' });
     } catch (error) {

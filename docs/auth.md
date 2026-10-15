@@ -88,6 +88,15 @@ Publish gate (M4): verify, Minor/Major updates, starting or discarding a Major d
 
 Public Space: a logged-in user can view and submit code. Private Space: members only. **Visitors can view public Spaces and published problems but must log in to submit** (decision 2026-10-11).
 
+## Terms and Privacy Policy acceptance (GRD-122)
+
+Core records which version of the Terms and the Privacy Policy each user accepted, and when, in `legal_acceptances` (primary key user + document + version, plus `accepted_at`). Nothing else is stored: no IP address, no user agent, because the Privacy Policy lists what Verdale collects and this is not on the list.
+
+- **One place to change the version.** `src/constants/legal.ts` (`CURRENT_LEGAL_VERSIONS`). A version is the document's effective date (`YYYY-MM-DD`). Republish a document: change its date there, in the Frontend's `lib/legal.ts` and in `content/legal/*.md`, in the same release.
+- **First sign-in.** `AuthService.completeOAuth` creates the user, the personal Space, the acceptance records and the session in one transaction. The login page says that signing in means accepting both documents.
+- **After a change.** `LegalService.hasAcceptedCurrent` is checked in the session hook (`src/routes.ts`). A signed-in user who has not accepted the current versions gets `403 LEGAL_ACCEPTANCE_REQUIRED` on every call except `GET /api/v1/me` (which carries `legal.acceptance_required`), `POST /api/v1/me/legal-acceptance` and `/api/v1/auth/*` (so they can log out). Users who signed up before this feature have no records and are asked once. Visitors are never asked.
+- **Accepting** sends the versions the page showed; Core records them only if they are still current (`409 LEGAL_VERSION_CHANGED` otherwise). Old records stay as history and go with the account (`ON DELETE CASCADE`).
+
 ## Testing
 
 `npm test` runs unit tests anywhere. Integration tests (sign-in, profile, Spaces, members, invitations, database rules) need Postgres with the migrations applied and are skipped without `TEST_DATABASE_URL`:

@@ -3,8 +3,11 @@ import pg from 'pg';
 import { PrismaClient } from '../../generated/prisma/client';
 import type { AuthConfigurations } from '@/config';
 import { loadConfig } from '@/config';
+import type { AiClient, AiPrompt, AiProviderName } from '@/libs/ai-provider';
+import { AiProviderError, AiProviderErrorCode } from '@/libs/ai-provider';
 import type { JobAccepted, JobRequest, JobResult, JobState, JudgeClient } from '@/libs/judge';
 import { JudgeRejectedError, JudgeUnavailableError } from '@/libs/judge';
+import SecretBox from '@/libs/crypto';
 import { signedHeaders } from '@/libs/hmac';
 import { OAuthProfile, OAuthProvider, OAuthProviders } from '@/libs/oauth';
 import { MemoryFileStorage } from '@/libs/storage/memory';
@@ -109,15 +112,41 @@ export class FakeJudge implements JudgeClient {
   }
 }
 
+/** Key ring that encrypts authors' AI keys in tests. */
+export const AI_KEY_RING = { 'ai-test': 'test-ai-key-encryption-secret-0123456789abcdef' };
+
+/**
+ * Stands in for Gemini and Claude: answers with the inputs the test sets, or
+ * fails with a provider error. It remembers every call, key and prompt
+ * included, so tests can check what was sent and to whom.
+ */
+export class FakeAiClient implements AiClient {
+  calls: Array<{ provider: AiProviderName; apiKey: string; prompt: AiPrompt }> = [];
+  inputs: string[] = ['1 2\n', '3 4\n', '5 6\n'];
+  failure: AiProviderErrorCode | null = null;
+
+  async generateInputs(provider: AiProviderName, apiKey: string, prompt: AiPrompt) {
+    this.calls.push({ provider, apiKey, prompt });
+    if (this.failure) throw new AiProviderError(this.failure);
+    return this.inputs;
+  }
+}
+
 /** The pieces of ApiDependencies that M3 added, filled with in-memory fakes. */
 export function testApiDependencies(
   prisma: PrismaClient,
   auth: AuthConfigurations,
   oauthProviders: OAuthProviders
-): ApiDependencies & { judgeFake: FakeJudge; tests: MemoryFileStorage; assets: MemoryFileStorage } {
+): ApiDependencies & {
+  judgeFake: FakeJudge;
+  aiFake: FakeAiClient;
+  tests: MemoryFileStorage;
+  assets: MemoryFileStorage;
+} {
   const tests = new MemoryFileStorage();
   const assets = new MemoryFileStorage();
   const judgeFake = new FakeJudge();
+  const aiFake = new FakeAiClient();
   return {
     prisma,
     auth,
@@ -132,7 +161,9 @@ export function testApiDependencies(
     },
     publicAssetBaseUrl: '/api/v1/assets',
     tuning: { streamIntervalMs: 10 },
+    ai: { client: aiFake, secretBox: new SecretBox(AI_KEY_RING) },
     judgeFake,
+    aiFake,
     tests,
     assets,
   };
@@ -165,6 +196,7 @@ export interface TestApp {
   judge: FakeJudge;
   /** Files Core wrote: private test bucket and public picture bucket. */
   storage: { tests: MemoryFileStorage; assets: MemoryFileStorage };
+  ai: FakeAiClient;
   /** Waits for submissions handed to Judge in the background. */
   settle: () => Promise<void>;
   /** Judge delivering a result to Core, signed the way Judge signs it. */
@@ -246,7 +278,7 @@ export async function createTestApp(
   const github = new FakeProvider('github');
   const google = new FakeProvider('google');
   const oauthProviders: OAuthProviders = { github, google };
-  const { judgeFake, tests, assets, ...api } = testApiDependencies(
+  const { judgeFake, aiFake, tests, assets, ...api } = testApiDependencies(
     database.prisma,
     config.auth,
     oauthProviders
@@ -347,7 +379,11 @@ export async function createTestApp(
     app,
     judge: judgeFake,
     storage: { tests, assets },
-    settle: () => app.dispatcher!.idle(),
+    ai: aiFake,
+    settle: async () => {
+      await app.dispatcher!.idle();
+      await app.aiTester!.idle();
+    },
     deliver,
     github,
     google,

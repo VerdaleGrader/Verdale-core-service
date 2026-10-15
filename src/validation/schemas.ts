@@ -3,6 +3,7 @@ import {
   LANGUAGES,
   MEMORY_LIMIT_KB,
   SOURCE_MAX_BYTES,
+  AI_TEST_LIMITS,
   STATEMENT_MAX_LENGTH,
   SUBMISSION_LIST_MAX_PAGE_SIZE,
   TIME_LIMIT_MS,
@@ -62,6 +63,13 @@ export const updateSpaceBody = z
   .refine((body) => Object.keys(body).length > 0, {
     message: 'Send at least one field to change.',
   });
+
+const legalVersion = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use the version date, YYYY-MM-DD.');
+
+/** The versions of the documents the page showed when the user pressed accept (GRD-122). */
+export const legalAcceptanceBody = z
+  .object({ terms: legalVersion, privacy: legalVersion })
+  .strict();
 
 export const updateMeBody = z
   .object({
@@ -371,6 +379,33 @@ export const generateBody = z.object({
 });
 
 export const generateParams = problemSlugParams.extend({ jobId: z.uuid() });
+
+// --- AI testcase generation (GRD-124) -----------------------------------------
+
+const aiProvider = z.enum(['gemini', 'claude']);
+
+export const aiProviderParams = z.object({ provider: aiProvider });
+
+export const saveAiKeyBody = z.object({
+  api_key: z
+    .string()
+    .min(1)
+    .max(AI_TEST_LIMITS.key_max_length + 64),
+});
+
+export const startAiTestsBody = z.object({
+  provider: aiProvider,
+  count: z.number().int().min(1).max(AI_TEST_LIMITS.max_count),
+  categories: z
+    .array(z.enum(['edge', 'max', 'random']))
+    .max(3)
+    .optional(),
+  solution_id: z.uuid(),
+  include_solution: z.boolean().optional(),
+  note: z.string().trim().max(AI_TEST_LIMITS.note_max_length).optional(),
+});
+
+export const aiTestsParams = generateParams;
 
 // --- The Space's submissions for staff (M3: GRD-93) ---------------------------
 

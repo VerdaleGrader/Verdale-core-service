@@ -35,8 +35,11 @@ model User {
   track_memberships     TrackMember[]
   audit_entries         AuditLog[]
   generate_jobs_created GenerateJob[]       @relation("GenerateJobAuthor")
+  ai_credentials        UserAiCredential[]
+  ai_test_jobs_created  AiTestJob[]         @relation("AiTestJobAuthor")
   verification_runs     VerificationRun[]   @relation("VerificationRequester")
   history_entries       ProblemHistory[]    @relation("HistoryActor")
+  legal_acceptances     LegalAcceptance[]
 
   @@map("users")
 }
@@ -70,6 +73,28 @@ model Session {
   @@index([user_id])
   @@index([expires_at])
   @@map("sessions")
+}
+
+enum LegalDocument {
+  terms
+  privacy
+}
+
+/// Which version of the Terms or Privacy Policy a user accepted, and when
+/// (GRD-122). Nothing else is stored: no IP address, no user agent. The
+/// version is the document's effective date (YYYY-MM-DD, see
+/// src/constants/legal.ts). One row per user, document and version; a new
+/// version of a document means a new row, and the old rows stay as history.
+model LegalAcceptance {
+  user_id     String        @db.Uuid
+  document    LegalDocument
+  version     String        @db.VarChar(10)
+  accepted_at DateTime      @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, document, version])
+  @@map("legal_acceptances")
 }
 
 enum SpaceVisibility {
@@ -273,6 +298,7 @@ model ProblemVersion {
   reference_solutions ReferenceSolution[]
   submissions         Submission[]
   generate_jobs       GenerateJob[]
+  ai_test_jobs        AiTestJob[]
   verification_runs   VerificationRun[]
   history             ProblemHistory[]
 
@@ -703,4 +729,95 @@ model GenerateRun {
 
   @@index([job_id, position])
   @@map("generate_runs")
+}
+
+// --- AI testcase generation (GRD-124) -----------------------------------------
+// The author brings their own provider key. The model only writes inputs; the
+// expected outputs come from running a reference solution on Judge. Items are
+// drafts: they are not TestCase rows and become part of the problem only when
+// the author saves the testcases page with a reference to them.
+
+enum AiProvider {
+  gemini
+  claude
+}
+
+enum AiTestJobStatus {
+  generating
+  computing
+  completed
+  failed
+}
+
+enum AiTestItemStatus {
+  pending
+  ok
+  skipped
+}
+
+model UserAiCredential {
+  id             String     @id @default(uuid()) @db.Uuid
+  user_id        String     @db.Uuid
+  provider       AiProvider
+  // AES-256-GCM of the API key; the key itself is never stored or returned.
+  key_ciphertext Bytes
+  key_nonce      Bytes
+  key_tag        Bytes
+  // Which entry of AI_KEY_ENCRYPTION_KEYS encrypted it.
+  key_id         String     @db.VarChar(64)
+  // Last four characters, the only part ever shown back.
+  last4          String     @db.VarChar(4)
+  created_at     DateTime   @default(now()) @db.Timestamptz(3)
+  updated_at     DateTime   @default(now()) @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, provider])
+  @@map("user_ai_credentials")
+}
+
+model AiTestJob {
+  id                 String          @id @default(uuid()) @db.Uuid
+  problem_version_id String          @db.Uuid
+  created_by_id      String          @db.Uuid
+  provider           AiProvider
+  requested_count    Int
+  // edge, max, random; empty means "follow the statement".
+  categories         String[]
+  include_solution   Boolean         @default(false)
+  judge_job_id       String?         @unique @db.Uuid
+  status             AiTestJobStatus @default(generating)
+  // AI_KEY_INVALID, AI_QUOTA_EXCEEDED, AI_BAD_RESPONSE, COMPILE_ERROR, JUDGE_UNAVAILABLE, ...
+  error_code         String?         @db.VarChar(64)
+  error_message      String?         @db.VarChar(300)
+  deadline_at        DateTime        @db.Timestamptz(3)
+  created_at         DateTime        @default(now()) @db.Timestamptz(3)
+  finished_at        DateTime?       @db.Timestamptz(3)
+
+  version    ProblemVersion @relation(fields: [problem_version_id], references: [id], onDelete: Cascade)
+  created_by User           @relation("AiTestJobAuthor", fields: [created_by_id], references: [id])
+  items      AiTestItem[]
+
+  @@index([problem_version_id, status])
+  @@index([created_at])
+  @@map("ai_test_jobs")
+}
+
+model AiTestItem {
+  id                String           @id @default(uuid()) @db.Uuid
+  job_id            String           @db.Uuid
+  position          Int
+  status            AiTestItemStatus @default(pending)
+  // Null when the model's text was refused before it was stored (see skip_reason).
+  input_sha256      String?          @db.VarChar(64)
+  input_size_bytes  Int?
+  output_sha256     String?          @db.VarChar(64)
+  output_size_bytes Int?
+  // Why the item was skipped: a format problem, or Judge's verdict (RE, TLE, ...).
+  skip_reason       String?          @db.VarChar(200)
+
+  job AiTestJob @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@index([job_id, position])
+  @@map("ai_test_items")
 }

@@ -73,3 +73,23 @@ export const PDF_MAX_PAGES = 10;
 
 /** Profile changes per user per minute (GRD-68). */
 export const PROFILE_UPDATES_PER_MINUTE = 10;
+
+/** AI testcase generation (GRD-124): a model writes the inputs, Judge makes the outputs. */
+export const AI_TEST_LIMITS = {
+  max_count: 20,
+  /** What one generated input may weigh; a model cannot write much more than this anyway. */
+  max_input_bytes: 64 * 1024,
+  /** What Core asks Judge to send back of each output; 20 of them stay under `total_bytes`. */
+  stdout_bytes: 512 * 1024,
+  total_bytes: 12 * MIB,
+  /** The whole job (model call and Judge) gives up after this long. */
+  timeout_ms: 5 * 60 * 1000,
+  /** Finished jobs are kept this long, so closing the page does not lose the drafts. */
+  retention_ms: 24 * 60 * 60 * 1000,
+  /** Starting a job is limited per person: every start costs the author's own quota. */
+  starts_per_minute: 5,
+  /** The author's extra instructions to the model. */
+  note_max_length: 1000,
+  key_min_length: 8,
+  key_max_length: 512,
+} as const;

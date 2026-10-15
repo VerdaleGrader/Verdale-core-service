@@ -66,6 +66,12 @@ const schema = z
     JUDGE_SECRET: z.preprocess(blankAsUnset, z.string().min(32).optional()),
     // Keys Judge signs results with, "id:secret,id:secret" (judge-to-core keyring).
     JUDGE_CALLBACK_KEYS: z.preprocess(blankAsUnset, z.string().optional()),
+    // --- AI testcase generation (GRD-124) -----------------------------------
+    // Keys that encrypt the authors' own AI provider keys, "id:secret,id:secret"; the
+    // first one encrypts new keys. Left out, the feature is off (the endpoints answer 503).
+    AI_KEY_ENCRYPTION_KEYS: z.preprocess(blankAsUnset, z.string().optional()),
+    AI_GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
+    AI_CLAUDE_MODEL: z.string().min(1).default('claude-sonnet-5-5'),
     // How Judge reaches Core to deliver results (inside Docker: host.docker.internal).
     CORE_INTERNAL_URL: z.url().default('http://host.docker.internal:8080'),
   })
@@ -129,6 +135,17 @@ const schema = z
         });
       }
     }
+    if (env.AI_KEY_ENCRYPTION_KEYS) {
+      try {
+        parseKeyring(env.AI_KEY_ENCRYPTION_KEYS);
+      } catch (error) {
+        context.addIssue({
+          code: 'custom',
+          path: ['AI_KEY_ENCRYPTION_KEYS'],
+          message: (error as Error).message,
+        });
+      }
+    }
     if (env.ENV !== Environment.Local) {
       for (const name of ['JUDGE_KEY_ID', 'JUDGE_SECRET', 'JUDGE_CALLBACK_KEYS'] as const) {
         if (!env[name]) {
@@ -158,6 +175,7 @@ export interface Configurations {
   storage: StorageConfigurations;
   judge: JudgeConfigurations;
   publish: { minHiddenTests: number };
+  ai: AiConfigurations;
 }
 
 export interface StorageConfigurations {
@@ -185,6 +203,12 @@ export interface JudgeConfigurations {
   callbackKeys: Record<string, string>;
   /** Where Judge is told to POST results. */
   callbackUrl: string;
+}
+
+export interface AiConfigurations {
+  /** Key id to secret; the first entry encrypts new provider keys. Absent: the feature is off. */
+  keyring?: Record<string, string>;
+  models: { gemini: string; claude: string };
 }
 
 export interface OAuthClientCredentials {
@@ -293,5 +317,11 @@ export function loadConfig(env: NodeJS.ProcessEnv): Configurations {
       callbackUrl: `${value.CORE_INTERNAL_URL.replace(/\/$/, '')}/internal/judge/result`,
     },
     publish: { minHiddenTests: value.PUBLISH_MIN_HIDDEN_TESTS },
+    ai: {
+      keyring: value.AI_KEY_ENCRYPTION_KEYS
+        ? parseKeyring(value.AI_KEY_ENCRYPTION_KEYS)
+        : undefined,
+      models: { gemini: value.AI_GEMINI_MODEL, claude: value.AI_CLAUDE_MODEL },
+    },
   };
 }
