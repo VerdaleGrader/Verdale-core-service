@@ -2999,6 +2999,8 @@ export interface components {
        * @description The reference solution that produces the expected outputs
        */
       solution_id: string;
+      /** @description Optional extra instructions for the model, added to the prompt. Never changes the rules that keep the answer valid. */
+      note?: string;
       /**
        * @description Also send the solution's code to the provider. Off unless the author turns it on.
        * @default false

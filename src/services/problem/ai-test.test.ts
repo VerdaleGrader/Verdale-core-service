@@ -23,6 +23,13 @@ describe('buildPrompt', () => {
     expect(prompt.system).toContain('{"inputs"');
   });
 
+  it('adds the author’s note, and nothing when there is none', () => {
+    expect(buildPrompt({ ...base, note: 'Use only prime numbers.' }).user).toContain(
+      'Use only prime numbers.'
+    );
+    expect(buildPrompt(base).user).not.toContain('Extra notes');
+  });
+
   it('names the chosen categories and adds the solution only when given', () => {
     const prompt = buildPrompt({
       ...base,
@@ -166,6 +173,15 @@ describeDb('AI testcases: a model writes inputs, Judge makes the outputs (GRD-12
   });
 
   describe('the flow', () => {
+    it('puts the author’s note in the prompt, and refuses one that is too long', async () => {
+      const solutionId = await withSolution();
+      await saveKey();
+      expect((await start(solutionId, { note: 'x'.repeat(1001) })).status).toBe(400);
+      expect((await start(solutionId, { note: '  Make n a power of two.  ' })).status).toBe(202);
+      await t.settle();
+      expect(t.ai.calls[0]!.prompt.user).toContain('Make n a power of two.');
+    });
+
     it('sends only the statement by default, then runs the solution on the inputs and drafts them', async () => {
       const solutionId = await withSolution();
       await saveKey();

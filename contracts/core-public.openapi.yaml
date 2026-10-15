@@ -5817,6 +5817,10 @@ components:
           type: string
           format: uuid
           description: The reference solution that produces the expected outputs
+        note:
+          type: string
+          maxLength: 1000
+          description: Optional extra instructions for the model, added to the prompt. Never changes the rules that keep the answer valid.
         include_solution:
           type: boolean
           default: false

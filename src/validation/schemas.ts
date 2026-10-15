@@ -402,6 +402,7 @@ export const startAiTestsBody = z.object({
     .optional(),
   solution_id: z.uuid(),
   include_solution: z.boolean().optional(),
+  note: z.string().trim().max(AI_TEST_LIMITS.note_max_length).optional(),
 });
 
 export const aiTestsParams = generateParams;

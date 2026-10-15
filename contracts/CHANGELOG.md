@@ -13,7 +13,7 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 
 - Additive. AI testcase generation, bring your own key (GRD-124). Judge is unchanged (its version is bumped only to keep the two files in step): Core uses the existing `generate` job kind.
   - **Keys.** `GET /me/ai-credentials` (`AiCredentialList`: provider and last four characters, never the key; `enabled` is false when the server has no encryption key), `PUT` and `DELETE /me/ai-credentials/{provider}` (`gemini` or `claude`).
-  - **Drafting.** `POST .../ai-tests` (`StartAiTestsRequest`: `provider`, `count`, optional `categories`, `solution_id`, `include_solution` off by default) and `GET .../ai-tests/{jobId}` (`AiTestJob`: `generating`, `computing`, `completed` or `failed`; items with `input_text`, `output`, `output_preview` and `skip_reason`). Drafts are never testcases until `saveTestCases` refers to their hashes. Errors: 409 `AI_KEY_MISSING`, `AI_KEY_UNREADABLE`, `AI_TEST_RUNNING`; job errors `AI_KEY_INVALID`, `AI_QUOTA_EXCEEDED`, `AI_BAD_RESPONSE`, `AI_UNAVAILABLE`.
+  - **Drafting.** `POST .../ai-tests` (`StartAiTestsRequest`: `provider`, `count`, optional `categories`, optional `note` (extra instructions, up to 1000 characters), `solution_id`, `include_solution` off by default) and `GET .../ai-tests/{jobId}` (`AiTestJob`: `generating`, `computing`, `completed` or `failed`; items with `input_text`, `output`, `output_preview` and `skip_reason`). Drafts are never testcases until `saveTestCases` refers to their hashes. Errors: 409 `AI_KEY_MISSING`, `AI_KEY_UNREADABLE`, `AI_TEST_RUNNING`; job errors `AI_KEY_INVALID`, `AI_QUOTA_EXCEEDED`, `AI_BAD_RESPONSE`, `AI_UNAVAILABLE`.
 
 ## 0.9.0 (2026-10-13)
 

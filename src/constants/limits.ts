@@ -88,6 +88,8 @@ export const AI_TEST_LIMITS = {
   retention_ms: 24 * 60 * 60 * 1000,
   /** Starting a job is limited per person: every start costs the author's own quota. */
   starts_per_minute: 5,
+  /** The author's extra instructions to the model. */
+  note_max_length: 1000,
   key_min_length: 8,
   key_max_length: 512,
 } as const;

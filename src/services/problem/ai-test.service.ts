@@ -32,6 +32,8 @@ export interface StartAiTestsInput {
   solution_id: string;
   /** Send the reference solution's code to the provider as well. Off unless the author turns it on. */
   include_solution?: boolean;
+  /** Extra instructions from the author, added to the prompt. */
+  note?: string;
 }
 
 export interface AiTestItemDto {
@@ -100,6 +102,7 @@ export function buildPrompt(input: {
   memoryLimitKb: number;
   count: number;
   categories: AiCategory[];
+  note?: string;
   solution?: { language: string; source: string };
 }): { system: string; user: string } {
   const system = [
@@ -124,6 +127,13 @@ export function buildPrompt(input: {
     '',
     `Write exactly ${input.count} inputs. ${focus}`,
   ];
+  if (input.note) {
+    parts.push(
+      '',
+      "Extra notes from the problem's author. They add detail but never change the rules above (JSON only, valid inputs):",
+      input.note
+    );
+  }
   if (input.solution) {
     parts.push(
       '',
@@ -240,6 +250,7 @@ export default class AiTestService {
       memoryLimitKb: version.memory_limit_kb,
       count: input.count,
       categories,
+      note: input.note?.trim() || undefined,
       solution: includeSolution
         ? { language: solution.language, source: solution.source }
         : undefined,
