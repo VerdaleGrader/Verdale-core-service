@@ -1127,7 +1127,7 @@ export interface paths {
      *     Answers 202 with the job; follow it with `getAiTests`. One job at a time per problem
      *     (409 `AI_TEST_RUNNING`); 409 `AI_KEY_MISSING` when there is no saved key for the
      *     provider, 409 `AI_KEY_UNREADABLE` when it must be saved again; 400 when the statement is
-     *     a PDF or empty; 429 `RATE_LIMITED`; 503 when the feature is not set up on the server.
+     *     empty (a PDF statement is sent to the model as a document); 429 `RATE_LIMITED`; 503 when the feature is not set up on the server.
      */
     post: operations['startAiTests'];
     delete?: never;

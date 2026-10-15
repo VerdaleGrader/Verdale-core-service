@@ -23,6 +23,8 @@ export class AiProviderError extends Error {
 export interface AiPrompt {
   system: string;
   user: string;
+  /** A PDF statement, sent to the model as a document next to `user`. */
+  pdf?: Buffer;
 }
 
 export interface AiClient {
@@ -87,7 +89,24 @@ export class HttpAiClient implements AiClient {
       headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
       body: {
         systemInstruction: { parts: [{ text: prompt.system }] },
-        contents: [{ role: 'user', parts: [{ text: prompt.user }] }],
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              ...(prompt.pdf
+                ? [
+                    {
+                      inline_data: {
+                        mime_type: 'application/pdf',
+                        data: prompt.pdf.toString('base64'),
+                      },
+                    },
+                  ]
+                : []),
+              { text: prompt.user },
+            ],
+          },
+        ],
         generationConfig: {
           responseMimeType: 'application/json',
           maxOutputTokens: MAX_OUTPUT_TOKENS,
@@ -108,7 +127,24 @@ export class HttpAiClient implements AiClient {
         model: this.options.models.claude,
         max_tokens: MAX_OUTPUT_TOKENS,
         system: prompt.system,
-        messages: [{ role: 'user', content: prompt.user }],
+        messages: [
+          {
+            role: 'user',
+            content: prompt.pdf
+              ? [
+                  {
+                    type: 'document',
+                    source: {
+                      type: 'base64',
+                      media_type: 'application/pdf',
+                      data: prompt.pdf.toString('base64'),
+                    },
+                  },
+                  { type: 'text', text: prompt.user },
+                ]
+              : prompt.user,
+          },
+        ],
       },
     };
   }

@@ -1,3 +1,4 @@
+import { PDFDocument } from 'pdf-lib';
 import { Cast, castSpace, createDraft, joinSpace, problemUrl } from '@/test/fixtures';
 import { createTestApp, describeDb, jobResult, resetDatabase, TestApp } from '@/test/harness';
 import type { JobRequest } from '@/libs/judge';
@@ -215,6 +216,25 @@ describeDb('AI testcases: a model writes inputs, Judge makes the outputs (GRD-12
       await start(solutionId, { include_solution: true });
       await t.settle();
       expect(t.ai.calls[0]!.prompt.user).toContain('print(SECRET_SOLUTION)');
+    });
+
+    it('sends a PDF statement to the model as a document instead of refusing it', async () => {
+      const solutionId = await withSolution();
+      await saveKey();
+      const document = await PDFDocument.create();
+      document.addPage();
+      const bytes = Buffer.from(await document.save());
+      const uploaded = await cast.editor.upload('PUT', url('/statement/pdf'), [
+        { name: 'file', filename: 'statement.pdf', content: bytes, contentType: 'application/pdf' },
+      ]);
+      expect(uploaded.status).toBe(200);
+      const started = await start(solutionId);
+      expect(started.status).toBe(202);
+      await t.settle();
+      const call = t.ai.calls[0]!;
+      expect(call.prompt.pdf?.equals(bytes)).toBe(true);
+      expect(call.prompt.user).toContain('The statement is the attached PDF.');
+      expect(t.judge.jobs).toHaveLength(1);
     });
 
     it('adds nothing to the testcases: drafts stay drafts until the author saves them', async () => {

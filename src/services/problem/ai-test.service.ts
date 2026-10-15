@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { AiProvider, PrismaClient, User } from '../../../generated/prisma/client';
 import { AI_TEST_LIMITS, OUTPUT_LIMIT_KB } from '@/constants/limits';
 import { ConflictError, NotFoundError, ServiceUnavailableError, ValidationError } from '@/errors';
-import { AiClient, AiProviderError, AiProviderErrorCode } from '@/libs/ai-provider';
+import { AiClient, AiPrompt, AiProviderError, AiProviderErrorCode } from '@/libs/ai-provider';
 import { JudgeClient, JudgeRejectedError, JudgeUnavailableError, JobRequest } from '@/libs/judge';
 import {
   FileStorage,
   StorageNotFoundError,
   StorageUnavailableError,
   readAll,
+  statementPdfKey,
   testFileKey,
 } from '@/libs/storage/file-storage';
 import { NormalizedFile, TestFileError, normalizeTestFile } from '@/libs/test-file';
@@ -187,14 +188,13 @@ export default class AiTestService {
     const draft = await this.problems.findDraftVersion(this.prisma, problem.id);
     assertDraftEditable(problem, draft);
     const version = draft!;
-    if (version.statement_mode === 'pdf' || version.statement.trim() === '') {
+    const isPdf = version.statement_mode === 'pdf';
+    if (isPdf ? !version.statement_pdf_sha256 : version.statement.trim() === '') {
       throw new ValidationError([
-        {
-          field: 'statement',
-          message: 'Write the statement in Markdown first; the model reads the statement text.',
-        },
+        { field: 'statement', message: 'Write or upload the statement first; the model reads it.' },
       ]);
     }
+    const pdf = isPdf ? await this.readStatementPdf(version.statement_pdf_sha256!) : undefined;
     const solution = await this.solutions.find(this.prisma, version.id, input.solution_id);
     if (!solution) throw new NotFoundError('Solution not found.');
     // Fails early, before a job exists, when there is no key or it cannot be read.
@@ -235,7 +235,7 @@ export default class AiTestService {
 
     const prompt = buildPrompt({
       title: version.title,
-      statement: version.statement,
+      statement: isPdf ? '(The statement is the attached PDF.)' : version.statement,
       timeLimitMs: version.time_limit_ms,
       memoryLimitKb: version.memory_limit_kb,
       count: input.count,
@@ -246,7 +246,7 @@ export default class AiTestService {
     });
     const run = this.run(
       job.id,
-      { provider: input.provider, apiKey, prompt, count: input.count },
+      { provider: input.provider, apiKey, prompt: { ...prompt, pdf }, count: input.count },
       {
         language: solution.language,
         source: solution.source,
@@ -258,6 +258,20 @@ export default class AiTestService {
     this.inflight.add(run);
     void run.finally(() => this.inflight.delete(run));
     return this.view(job.id);
+  }
+
+  /** The PDF statement's bytes, for the model. A file missing from storage is a 503, not a job that fails later. */
+  private async readStatementPdf(sha256: string): Promise<Buffer> {
+    try {
+      return await readAll((await this.storage.get(statementPdfKey(sha256))).body);
+    } catch (error) {
+      if (error instanceof StorageNotFoundError || error instanceof StorageUnavailableError) {
+        throw new ServiceUnavailableError(
+          'The PDF statement could not be read. Try again in a moment.'
+        );
+      }
+      throw error;
+    }
   }
 
   async get(user: User, slug: string, problemSlug: string, jobId: string): Promise<AiTestJobDto> {
@@ -291,7 +305,7 @@ export default class AiTestService {
     request: {
       provider: AiProvider;
       apiKey: string;
-      prompt: { system: string; user: string };
+      prompt: AiPrompt;
       count: number;
     },
     solution: {

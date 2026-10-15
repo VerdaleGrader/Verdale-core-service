@@ -49,6 +49,30 @@ describe('HttpAiClient', () => {
     await expect(ai.generateInputs('claude', 'k', PROMPT)).rejects.toMatchObject({ code });
   });
 
+  it('attaches a PDF statement as a document for Claude and as inline data for Gemini', async () => {
+    const pdf = Buffer.from('%PDF-1.7 fake');
+    const claude = client(() => json({ content: [{ type: 'text', text: '["1\\n"]' }] }));
+    await claude.ai.generateInputs('claude', 'k', { ...PROMPT, pdf });
+    const claudeBody = JSON.parse(claude.calls[0]!.init.body as string);
+    expect(claudeBody.messages[0].content).toEqual([
+      {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: pdf.toString('base64') },
+      },
+      { type: 'text', text: 'usr' },
+    ]);
+
+    const gemini = client(() =>
+      json({ candidates: [{ content: { parts: [{ text: '["1\\n"]' }] } }] })
+    );
+    await gemini.ai.generateInputs('gemini', 'k', { ...PROMPT, pdf });
+    const geminiBody = JSON.parse(gemini.calls[0]!.init.body as string);
+    expect(geminiBody.contents[0].parts).toEqual([
+      { inline_data: { mime_type: 'application/pdf', data: pdf.toString('base64') } },
+      { text: 'usr' },
+    ]);
+  });
+
   it('maps a network failure and a malformed answer', async () => {
     const down = client(() => {
       throw new Error('socket hang up');
