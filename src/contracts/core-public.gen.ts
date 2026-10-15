@@ -120,6 +120,50 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/ai-credentials': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * My saved AI provider keys (GRD-124)
+     * @description Only the provider and the last four characters of each key; the key itself is never
+     *     returned. `enabled` is false when the server has no encryption key set up, and the
+     *     feature is then off.
+     */
+    get: operations['listAiCredentials'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/ai-credentials/{provider}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Save or replace my key for one AI provider (GRD-124)
+     * @description The key is encrypted before it is stored and used only by Core, for the calls made on
+     *     the author's behalf. Answers 503 when the feature is not set up on the server.
+     */
+    put: operations['saveAiCredential'];
+    post?: never;
+    /** Remove my key for one AI provider (GRD-124) */
+    delete: operations['deleteAiCredential'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/me': {
     parameters: {
       query?: never;
@@ -1058,6 +1102,55 @@ export interface paths {
      * @description Keeps the runs that already finished. Stopping a job that is no longer running changes nothing.
      */
     post: operations['stopGenerate'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/ai-tests': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Draft testcases with AI (owner, administrator or editor) (GRD-124)
+     * @description A model (Gemini or Claude, with the author's own saved key) writes `count` inputs from
+     *     the statement; Core checks and stores them, then runs the chosen reference solution on
+     *     Judge to get the expected outputs. Only the statement and limits are sent to the
+     *     provider; the solution's code is sent only when `include_solution` is true. Nothing is
+     *     added to the problem: the drafts go into `saveTestCases` when the author confirms.
+     *     Answers 202 with the job; follow it with `getAiTests`. One job at a time per problem
+     *     (409 `AI_TEST_RUNNING`); 409 `AI_KEY_MISSING` when there is no saved key for the
+     *     provider, 409 `AI_KEY_UNREADABLE` when it must be saved again; 400 when the statement is
+     *     a PDF or empty; 429 `RATE_LIMITED`; 503 when the feature is not set up on the server.
+     */
+    post: operations['startAiTests'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/ai-tests/{jobId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Progress and drafts of an AI testcase job (owner, administrator, editor, observer) (GRD-124)
+     * @description Poll it while `status` is `generating` or `computing`. Items carry their text only once
+     *     the job is `completed`. Finished jobs are kept for 24 hours.
+     */
+    get: operations['getAiTests'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2881,6 +2974,83 @@ export interface components {
       /** Format: date-time */
       last_submission_at: string | null;
     };
+    /** @enum {string} */
+    AiProvider: 'gemini' | 'claude';
+    AiCredential: {
+      provider: components['schemas']['AiProvider'];
+      /** @description The last four characters of the key, the only part ever shown */
+      last4: string;
+    };
+    AiCredentialList: {
+      enabled: boolean;
+      items: components['schemas']['AiCredential'][];
+    };
+    SaveAiCredentialRequest: {
+      /** @description The provider's API key, 8 to 512 characters with no spaces */
+      api_key: string;
+    };
+    StartAiTestsRequest: {
+      provider: components['schemas']['AiProvider'];
+      count: number;
+      /** @description Optional. Left empty, the model follows the statement. */
+      categories?: ('edge' | 'max' | 'random')[];
+      /**
+       * Format: uuid
+       * @description The reference solution that produces the expected outputs
+       */
+      solution_id: string;
+      /**
+       * @description Also send the solution's code to the provider. Off unless the author turns it on.
+       * @default false
+       */
+      include_solution: boolean;
+    };
+    AiTestFile: {
+      sha256: string;
+      size_bytes: number;
+    };
+    AiTestItem: {
+      /** Format: uuid */
+      id: string;
+      position: number;
+      /** @enum {string} */
+      status: 'pending' | 'ok' | 'skipped';
+      input: components['schemas']['AiTestFile'] | null;
+      /** @description The generated input; only once the job is `completed` */
+      input_text: string | null;
+      /** @description The expected output Judge produced, ready to go into `saveTestCases` */
+      output: components['schemas']['AiTestFile'] | null;
+      /** @description The first characters of the expected output; only once the job is `completed` */
+      output_preview: string | null;
+      /** @description Why the item cannot be used (a format problem, or what happened when the solution ran on it) */
+      skip_reason: string | null;
+    };
+    AiTestJob: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {string} */
+      status: 'generating' | 'computing' | 'completed' | 'failed';
+      provider: components['schemas']['AiProvider'];
+      requested_count: number;
+      /**
+       * @description Set when the job failed as a whole: `AI_KEY_INVALID`, `AI_QUOTA_EXCEEDED`,
+       *     `AI_BAD_RESPONSE`, `AI_UNAVAILABLE`, `COMPILE_ERROR`, `JUDGE_UNAVAILABLE`,
+       *     `JUDGE_REJECTED`, `JUDGE_ERROR`, `TIMED_OUT` or `INTERNAL_ERROR`
+       */
+      error: {
+        code: string;
+        message: string;
+      } | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      deadline_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      usable_count: number;
+      skipped_count: number;
+      items: components['schemas']['AiTestItem'][];
+    };
     GenerateJob: {
       /** Format: uuid */
       id: string;
@@ -3020,6 +3190,7 @@ export interface components {
     /** @description Lines in the window */
     MaxLines: number;
     JobId: string;
+    AiProvider: components['schemas']['AiProvider'];
   };
   requestBodies: never;
   headers: never;
@@ -3165,6 +3336,80 @@ export interface operations {
         content?: never;
       };
       403: components['responses']['Error'];
+    };
+  };
+  listAiCredentials: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The keys */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AiCredentialList'];
+        };
+      };
+      401: components['responses']['Error'];
+    };
+  };
+  saveAiCredential: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider: components['parameters']['AiProvider'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SaveAiCredentialRequest'];
+      };
+    };
+    responses: {
+      /** @description Saved */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AiCredential'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      429: components['responses']['Error'];
+      503: components['responses']['Error'];
+    };
+  };
+  deleteAiCredential: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider: components['parameters']['AiProvider'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed (also when there was none) */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      429: components['responses']['Error'];
     };
   };
   getMe: {
@@ -4805,6 +5050,72 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['GenerateJob'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  startAiTests: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StartAiTestsRequest'];
+      };
+    };
+    responses: {
+      /** @description Started */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AiTestJob'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      429: components['responses']['Error'];
+      503: components['responses']['Error'];
+    };
+  };
+  getAiTests: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+        jobId: components['parameters']['JobId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The job */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AiTestJob'];
         };
       };
       400: components['responses']['Error'];

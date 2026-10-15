@@ -43,6 +43,14 @@ import SolutionRepository from '@/repositories/solution.repository';
 import SpaceRepository from '@/repositories/space.repository';
 import SubmissionRepository from '@/repositories/submission.repository';
 import GenerateRepository from '@/repositories/generate.repository';
+import AiCredentialRepository from '@/repositories/ai-credential.repository';
+import AiTestRepository from '@/repositories/ai-test.repository';
+import AiCredentialController from '@/controllers/user/ai-credential.controller';
+import AiTestController from '@/controllers/problem/ai-test.controller';
+import AiTestService from '@/services/problem/ai-test.service';
+import AiCredentialService from '@/services/user/ai-credential.service';
+import type { AiClient } from '@/libs/ai-provider';
+import type SecretBox from '@/libs/crypto';
 import TestCaseRepository from '@/repositories/test-case.repository';
 import TrackRepository from '@/repositories/track.repository';
 import UserRepository from '@/repositories/user.repository';
@@ -63,6 +71,7 @@ import SubmissionReviewService from '@/services/submission/submission-review.ser
 import SubmissionReviewController from '@/controllers/submission/submission-review.controller';
 import SubmissionReportRepository from '@/repositories/submission-report.repository';
 import {
+  AI_TEST_LIMITS,
   PROFILE_UPDATES_PER_MINUTE,
   SUBMISSIONS_PER_MINUTE,
   TEST_LIMITS,
@@ -97,8 +106,11 @@ export interface ApiDependencies {
     streamIntervalMs?: number;
     dispatchGiveUpMs?: number;
     generateTimeoutMs?: number;
+    aiTestTimeoutMs?: number;
     verifyTimeoutMs?: number;
   };
+  /** AI testcase generation (GRD-124). `secretBox` absent: the feature is off. */
+  ai: { client: AiClient; secretBox?: SecretBox };
   /** Publish rules from the environment (`PUBLISH_MIN_HIDDEN_TESTS`); the default is 1. */
   publish?: { minHiddenTests: number };
   now?: () => Date;
@@ -110,6 +122,8 @@ declare module 'fastify' {
     dispatcher?: JudgeDispatcher;
     /** Creates expected outputs from solutions; index.ts starts and stops its background loop. */
     generator?: GenerateService;
+    /** Drafts testcases with a model; index.ts starts and stops its background loop. */
+    aiTester?: AiTestService;
   }
 }
 
@@ -232,6 +246,7 @@ function registerApi(
     publicAssetBaseUrl,
     tuning,
     publish,
+    ai,
     now,
   }: ApiDependencies
 ) {
@@ -360,6 +375,24 @@ function registerApi(
     { callbackUrl: judge.config.callbackUrl, now, timeoutMs: tuning?.generateTimeoutMs }
   );
   app.decorate('generator', generateService);
+  const aiCredentialService = new AiCredentialService(
+    prisma,
+    new AiCredentialRepository(),
+    ai.secretBox
+  );
+  const aiTestService = new AiTestService(
+    prisma,
+    new AiTestRepository(),
+    problemRepository,
+    solutionRepository,
+    problemService,
+    aiCredentialService,
+    ai.client,
+    judge.client,
+    storage.tests,
+    { callbackUrl: judge.config.callbackUrl, now, timeoutMs: tuning?.aiTestTimeoutMs }
+  );
+  app.decorate('aiTester', aiTestService);
   const dispatcher = new JudgeDispatcher(
     prisma,
     submissionRepository,
@@ -418,6 +451,7 @@ function registerApi(
     judge.config.callbackKeys,
     generateService,
     verificationService,
+    aiTestService,
     now
   );
 
@@ -439,6 +473,8 @@ function registerApi(
   const judgeResultController = new JudgeResultController(judgeResultService);
   const userController = new UserController(userService, legalService);
   const legalController = new LegalController(userService, legalService);
+  const aiCredentialController = new AiCredentialController(aiCredentialService);
+  const aiTestController = new AiTestController(aiTestService);
   const spaceController = new SpaceController(spaceService, memberService, inviteService);
   const inviteController = new InviteController(inviteService);
   const trackController = new TrackController(
@@ -549,6 +585,17 @@ function registerApi(
         v1.get('/me', userController.me.bind(userController));
         v1.post('/me/legal-acceptance', legalController.accept.bind(legalController));
         v1.patch('/me', { preHandler: profileLimit }, userController.updateMe.bind(userController));
+        v1.get('/me/ai-credentials', aiCredentialController.list.bind(aiCredentialController));
+        v1.put(
+          '/me/ai-credentials/:provider',
+          { preHandler: profileLimit },
+          aiCredentialController.save.bind(aiCredentialController)
+        );
+        v1.delete(
+          '/me/ai-credentials/:provider',
+          { preHandler: profileLimit },
+          aiCredentialController.remove.bind(aiCredentialController)
+        );
         v1.get('/me/spaces', spaceController.listMine.bind(spaceController));
         v1.get('/me/invites', inviteController.listMine.bind(inviteController));
         v1.post('/me/invites/:inviteId/accept', inviteController.acceptById.bind(inviteController));
@@ -629,6 +676,28 @@ function registerApi(
           `${problem}/generate/:jobId/stop`,
           testCaseController.generateStop.bind(testCaseController)
         );
+        // Starting a draft costs the author's own provider quota: limited per person.
+        const checkAiStartLimit = scope.createRateLimit({
+          max: AI_TEST_LIMITS.starts_per_minute,
+          timeWindow: '1 minute',
+          keyGenerator: (request) => `ai-tests:${request.currentUser?.id ?? request.ip}`,
+        });
+        const aiStartLimit = async (request: FastifyRequest) => {
+          const limit = await checkAiStartLimit(request);
+          if (!limit.isAllowed && limit.isExceeded) {
+            throw new VError({
+              message: `Too many requests. Try again in ${Math.ceil(limit.ttlInSeconds)} seconds.`,
+              status: 429,
+              error_code: 'RATE_LIMITED',
+            });
+          }
+        };
+        v1.post(
+          `${problem}/ai-tests`,
+          { preHandler: aiStartLimit },
+          aiTestController.start.bind(aiTestController)
+        );
+        v1.get(`${problem}/ai-tests/:jobId`, aiTestController.status.bind(aiTestController));
         v1.post(`${problem}/tests`, testCaseController.create.bind(testCaseController));
         v1.post(`${problem}/tests/reorder`, testCaseController.reorder.bind(testCaseController));
         v1.put(`${problem}/tests/:testId`, testCaseController.replace.bind(testCaseController));
