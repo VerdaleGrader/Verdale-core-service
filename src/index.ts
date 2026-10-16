@@ -37,6 +37,7 @@ async function main() {
       judge: { client: new HttpJudgeClient(config.judge), config: config.judge },
       publicAssetBaseUrl: config.storage.publicAssetBaseUrl,
       publish: config.publish,
+      rateLimits: config.rateLimits,
       ai: {
         client: new HttpAiClient({ models: config.ai.models }),
         secretBox: config.ai.keyring ? new SecretBox(config.ai.keyring) : undefined,

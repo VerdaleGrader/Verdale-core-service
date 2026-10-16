@@ -5,16 +5,19 @@ import fastify, { FastifyError, FastifyInstance, FastifyRequest } from 'fastify'
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { PrismaClient } from '../generated/prisma/client';
-import type { AuthConfigurations, JudgeConfigurations } from '@/config';
+import type { AuthConfigurations, JudgeConfigurations, RateLimitConfigurations } from '@/config';
 import {
   ForbiddenError,
   InternalServerError,
   NotFoundError,
+  RateLimitedError,
+  SuspendedError,
   VError,
   ValidationError,
 } from '@/errors';
 import TLogger, { Layer } from '@/logging/logger';
 import { JudgeClient } from '@/libs/judge';
+import { clientAddress, defaultRateLimits, throwIfExceeded } from '@/libs/rate-limit';
 import { Storages } from '@/libs/storage';
 import AssetController from '@/controllers/problem/asset.controller';
 import ProblemController from '@/controllers/problem/problem.controller';
@@ -30,6 +33,12 @@ import InviteController from '@/controllers/space/invite.controller';
 import SpaceController from '@/controllers/space/space.controller';
 import LegalController from '@/controllers/legal/legal.controller';
 import UserController from '@/controllers/user/user.controller';
+import PlatformAdminController, {
+  ReportController,
+} from '@/controllers/platform/platform-admin.controller';
+import PlatformRepository from '@/repositories/platform.repository';
+import PlatformAdminService from '@/services/platform/platform-admin.service';
+import ReportService from '@/services/platform/report.service';
 import { OAuthProviders } from '@/libs/oauth';
 import { SESSION_COOKIE } from '@/middleware/session';
 import AuditRepository from '@/repositories/audit.repository';
@@ -70,12 +79,7 @@ import SubmissionService from '@/services/submission/submission.service';
 import SubmissionReviewService from '@/services/submission/submission-review.service';
 import SubmissionReviewController from '@/controllers/submission/submission-review.controller';
 import SubmissionReportRepository from '@/repositories/submission-report.repository';
-import {
-  AI_TEST_LIMITS,
-  PROFILE_UPDATES_PER_MINUTE,
-  SUBMISSIONS_PER_MINUTE,
-  TEST_LIMITS,
-} from '@/constants/limits';
+import { AI_TEST_LIMITS, PROFILE_UPDATES_PER_MINUTE, TEST_LIMITS } from '@/constants/limits';
 import InviteService from '@/services/space/invite.service';
 import MemberService from '@/services/space/member.service';
 import SpaceService from '@/services/space/space.service';
@@ -108,11 +112,15 @@ export interface ApiDependencies {
     generateTimeoutMs?: number;
     aiTestTimeoutMs?: number;
     verifyTimeoutMs?: number;
+    /** Length of a rate-limit window; tests shorten it to see counters reset. */
+    rateLimitWindowMs?: number;
   };
   /** AI testcase generation (GRD-124). `secretBox` absent: the feature is off. */
   ai: { client: AiClient; secretBox?: SecretBox };
   /** Publish rules from the environment (`PUBLISH_MIN_HIDDEN_TESTS`); the default is 1. */
   publish?: { minHiddenTests: number };
+  /** Rate limits (GRD-55); left out, the defaults of constants/limits.ts. */
+  rateLimits?: RateLimitConfigurations;
   now?: () => Date;
 }
 
@@ -202,6 +210,9 @@ export function buildApp({ version, readinessChecks, api }: AppDependencies) {
       });
       appError = new InternalServerError();
     }
+    if (appError.retryAfterSeconds !== undefined) {
+      reply.header('Retry-After', String(appError.retryAfterSeconds));
+    }
     return reply.status(appError.status).send(appError.toJSON(request.id));
   });
   app.setNotFoundHandler((request, reply) => {
@@ -221,6 +232,13 @@ export function buildApp({ version, readinessChecks, api }: AppDependencies) {
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** What a suspended account may still do: read /me (the web app shows why) and sign out or in (GRD-58). */
+function isSuspensionExempt(request: FastifyRequest): boolean {
+  const path = (request.url.split('?')[0] ?? '').replace(/\/+$/, '');
+  if (request.method === 'GET' && path === '/api/v1/me') return true;
+  return path.startsWith('/api/v1/auth/');
+}
 
 /** Calls a user may make before accepting the current legal documents (GRD-122). */
 function isLegalExempt(request: FastifyRequest): boolean {
@@ -247,6 +265,7 @@ function registerApi(
     tuning,
     publish,
     ai,
+    rateLimits = defaultRateLimits(),
     now,
   }: ApiDependencies
 ) {
@@ -431,7 +450,14 @@ function registerApi(
     problemService,
     dispatcher,
     trackRepository,
+    rateLimits.maxPendingSubmissionsPerUser,
     now
+  );
+  const platformRepository = new PlatformRepository();
+  const platformAdminService = new PlatformAdminService(prisma, platformRepository, now);
+  const platformAdminController = new PlatformAdminController(platformAdminService);
+  const reportController = new ReportController(
+    new ReportService(prisma, platformRepository, problemService)
   );
   const submissionReviewService = new SubmissionReviewService(
     prisma,
@@ -509,17 +535,22 @@ function registerApi(
     await scope.register(multipart, {
       limits: { fileSize: TEST_LIMITS.max_file_bytes, files: 4, fields: 8, parts: 12 },
     });
-    // Generous global limit; the sign-in endpoints get a tight one below.
+    // Counters live in this process's memory (docs/decisions.md, GRD-55). Every request counts
+    // against its address here; a signed-in person's own budget is checked after the session is
+    // known (below), and sign-in and submitting have tighter limits of their own.
+    const addressOf = (request: FastifyRequest) =>
+      clientAddress(request, rateLimits.clientIpHeader);
     await scope.register(rateLimit, {
       global: true,
-      max: 300,
-      timeWindow: '1 minute',
-      errorResponseBuilder: (request, context) =>
-        new VError({
-          message: `Too many requests. Try again in ${Math.ceil(context.ttl / 1000)} seconds.`,
-          status: 429,
-          error_code: 'RATE_LIMITED',
-        }),
+      max: rateLimits.apiPerIp,
+      timeWindow: rateLimits.windowMs,
+      keyGenerator: addressOf,
+      errorResponseBuilder: (_request, context) => new RateLimitedError(context.ttl / 1000),
+    });
+    const checkApiUserLimit = scope.createRateLimit({
+      max: rateLimits.apiPerUser,
+      timeWindow: rateLimits.windowMs,
+      keyGenerator: (request) => `api-user:${request.currentUser?.id ?? addressOf(request)}`,
     });
 
     scope.decorateRequest('currentUser', null);
@@ -537,6 +568,16 @@ function registerApi(
         throw new ForbiddenError('Cross-site request rejected.');
       }
       request.currentUser = await authService.authenticate(token);
+      // A person's whole budget, however many sessions and addresses they use.
+      if (request.currentUser) throwIfExceeded(await checkApiUserLimit(request));
+
+      // GRD-58: a suspended account is closed except for reading /me and signing out.
+      if (request.currentUser?.suspended_at && !isSuspensionExempt(request)) {
+        throw new SuspendedError(
+          `Your account has been suspended: ${request.currentUser.suspension_reason ?? 'no reason given'}. Contact support.`,
+          'ACCOUNT_SUSPENDED'
+        );
+      }
 
       // GRD-122: after the Terms or the Privacy Policy change, a signed-in
       // user can do nothing but read /me, accept, or log out until they accept.
@@ -549,7 +590,16 @@ function registerApi(
       }
     });
 
-    const signInLimit = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
+    // Starting and finishing a sign-in share one budget per address.
+    const checkSignInLimit = scope.createRateLimit({
+      max: rateLimits.signInPerIp,
+      timeWindow: rateLimits.windowMs,
+      keyGenerator: (request) => `sign-in:${addressOf(request)}`,
+    });
+    const signInLimit = {
+      preHandler: async (request: FastifyRequest) =>
+        throwIfExceeded(await checkSignInLimit(request), 'sign-in attempts'),
+    };
 
     await scope.register(
       async (v1) => {
@@ -569,19 +619,11 @@ function registerApi(
         // Changing the profile is rare: 10 changes a minute per person is plenty (GRD-68).
         const checkProfileLimit = scope.createRateLimit({
           max: PROFILE_UPDATES_PER_MINUTE,
-          timeWindow: '1 minute',
-          keyGenerator: (request) => `profile:${request.currentUser?.id ?? request.ip}`,
+          timeWindow: rateLimits.windowMs,
+          keyGenerator: (request) => `profile:${request.currentUser?.id ?? addressOf(request)}`,
         });
-        const profileLimit = async (request: FastifyRequest) => {
-          const limit = await checkProfileLimit(request);
-          if (!limit.isAllowed && limit.isExceeded) {
-            throw new VError({
-              message: `Too many changes. Try again in ${Math.ceil(limit.ttlInSeconds)} seconds.`,
-              status: 429,
-              error_code: 'RATE_LIMITED',
-            });
-          }
-        };
+        const profileLimit = async (request: FastifyRequest) =>
+          throwIfExceeded(await checkProfileLimit(request), 'changes');
         v1.get('/me', userController.me.bind(userController));
         v1.post('/me/legal-acceptance', legalController.accept.bind(legalController));
         v1.patch('/me', { preHandler: profileLimit }, userController.updateMe.bind(userController));
@@ -679,19 +721,11 @@ function registerApi(
         // Starting a draft costs the author's own provider quota: limited per person.
         const checkAiStartLimit = scope.createRateLimit({
           max: AI_TEST_LIMITS.starts_per_minute,
-          timeWindow: '1 minute',
-          keyGenerator: (request) => `ai-tests:${request.currentUser?.id ?? request.ip}`,
+          timeWindow: rateLimits.windowMs,
+          keyGenerator: (request) => `ai-tests:${request.currentUser?.id ?? addressOf(request)}`,
         });
-        const aiStartLimit = async (request: FastifyRequest) => {
-          const limit = await checkAiStartLimit(request);
-          if (!limit.isAllowed && limit.isExceeded) {
-            throw new VError({
-              message: `Too many requests. Try again in ${Math.ceil(limit.ttlInSeconds)} seconds.`,
-              status: 429,
-              error_code: 'RATE_LIMITED',
-            });
-          }
-        };
+        const aiStartLimit = async (request: FastifyRequest) =>
+          throwIfExceeded(await checkAiStartLimit(request));
         v1.post(
           `${problem}/ai-tests`,
           { preHandler: aiStartLimit },
@@ -770,21 +804,21 @@ function registerApi(
         );
 
         // --- submissions (M3) -------------------------------------------------
-        // Submitting and re-checking share one per-user budget (GRD-44; GRD-55 tunes it).
-        const checkSubmitLimit = scope.createRateLimit({
-          max: SUBMISSIONS_PER_MINUTE,
-          timeWindow: '1 minute',
-          keyGenerator: (request) => `submit:${request.currentUser?.id ?? request.ip}`,
+        // Submitting and re-checking share one budget per person and one per address (GRD-44, GRD-55);
+        // the number of submissions a person may have waiting is checked by the service.
+        const checkSubmitUserLimit = scope.createRateLimit({
+          max: rateLimits.submitPerUser,
+          timeWindow: rateLimits.windowMs,
+          keyGenerator: (request) => `submit:${request.currentUser?.id ?? addressOf(request)}`,
+        });
+        const checkSubmitAddressLimit = scope.createRateLimit({
+          max: rateLimits.submitPerIp,
+          timeWindow: rateLimits.windowMs,
+          keyGenerator: (request) => `submit-ip:${addressOf(request)}`,
         });
         const submitLimit = async (request: FastifyRequest) => {
-          const limit = await checkSubmitLimit(request);
-          if (!limit.isAllowed && limit.isExceeded) {
-            throw new VError({
-              message: `Too many submissions. Try again in ${Math.ceil(limit.ttlInSeconds)} seconds.`,
-              status: 429,
-              error_code: 'RATE_LIMITED',
-            });
-          }
+          throwIfExceeded(await checkSubmitUserLimit(request), 'submissions');
+          throwIfExceeded(await checkSubmitAddressLimit(request), 'submissions from this address');
         };
         v1.post(
           `${problem}/submissions`,
@@ -832,6 +866,66 @@ function registerApi(
           '/submissions/:submissionId/rejudge',
           { preHandler: submitLimit },
           submissionController.rejudge.bind(submissionController)
+        );
+
+        // --- reports and platform administration (M4, GRD-58) ---------------------
+        const checkReportLimit = scope.createRateLimit({
+          max: 5,
+          timeWindow: rateLimits.windowMs,
+          keyGenerator: (request) => `report:${request.currentUser?.id ?? addressOf(request)}`,
+        });
+        v1.post(
+          `${problem}/report`,
+          {
+            preHandler: async (request) =>
+              throwIfExceeded(await checkReportLimit(request), 'reports'),
+          },
+          reportController.report.bind(reportController)
+        );
+        const admin = '/admin';
+        v1.get(
+          `${admin}/reports`,
+          platformAdminController.listReports.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/reports/:reportId/resolve`,
+          platformAdminController.resolveReport.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/spaces/:slug/problems/:problemSlug/unpublish`,
+          platformAdminController.unpublishProblem.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/spaces/:slug/problems/:problemSlug/restore`,
+          platformAdminController.restoreProblem.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/spaces/:slug/suspend`,
+          platformAdminController.suspendSpace.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/spaces/:slug/restore`,
+          platformAdminController.restoreSpace.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/users/:username/suspend`,
+          platformAdminController.suspendUser.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/users/:username/restore`,
+          platformAdminController.restoreUser.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/users/:username/suspend-submissions`,
+          platformAdminController.suspendSubmissions.bind(platformAdminController)
+        );
+        v1.post(
+          `${admin}/users/:username/resume-submissions`,
+          platformAdminController.resumeSubmissions.bind(platformAdminController)
+        );
+        v1.get(
+          `${admin}/audit-log`,
+          platformAdminController.listAudit.bind(platformAdminController)
         );
 
         v1.get('/invites/:token', inviteController.preview.bind(inviteController));

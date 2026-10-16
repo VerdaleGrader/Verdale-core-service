@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Verdale Core public API
-  version: 0.10.0
+  version: 0.11.0
   description: |
     Public HTTP API of Core service, consumed by the Frontend.
     Endpoints are added story by story: accounts and Spaces (M2), problems, tests,
@@ -3398,6 +3398,385 @@ paths:
           $ref: '#/components/responses/Error'
         '409':
           $ref: '#/components/responses/Error'
+  /api/v1/spaces/{slug}/problems/{problemSlug}/report:
+    post:
+      operationId: reportProblem
+      tags: [platform]
+      summary: Report a problem to the platform administrators
+      description: |
+        Any signed-in person who can open the problem may report it (GRD-58). The report holds the reason and a category and
+        waits for an administrator. One open report per person and problem: asking again is `409 ALREADY_REPORTED`.
+        A problem the person cannot see (a draft, taken down, outside their Tracks) is `404`. At most 5 reports a minute
+        per person (`429 RATE_LIMITED`).
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportProblemRequest'
+      responses:
+        '201':
+          description: The report is recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/reports:
+    get:
+      operationId: listReports
+      tags: [platform]
+      summary: Reports of problems (platform administrators)
+      description: |
+        Open reports come oldest first, resolved ones newest first. Every `/api/v1/admin/*` route is for platform
+        administrators (a role above the Spaces, given on the command line only, `docs/platform-admin.md`). Anybody else
+        signed in gets `404` as for a route that does not exist; a visitor gets `401`.
+      security:
+        - session: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, dismissed, actioned, all]
+            default: open
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/reports/{reportId}/resolve:
+    post:
+      operationId: resolveReport
+      tags: [platform]
+      summary: Close a report as dismissed or actioned (platform administrators)
+      description: Records who closed it, when and a note. `409 REPORT_RESOLVED` when it was closed before. Audited.
+      security:
+        - session: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveReportRequest'
+      responses:
+        '200':
+          description: The report, now closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/spaces/{slug}/problems/{problemSlug}/unpublish:
+    post:
+      operationId: unpublishProblem
+      tags: [platform]
+      summary: Take a published problem down at once (platform administrators)
+      description: |
+        The problem becomes a draft for everybody who is not staff of its Space: solvers, outsiders and visitors get `404`,
+        submissions are refused and it leaves every list. Its published version is not touched; its authors cannot publish,
+        update, archive or delete it. `409 NOT_PUBLISHED` for anything that is not published, `409 ALREADY_SUSPENDED`
+        when it is already down. The reason is recorded in the audit log.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: The problem is down
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemTakedown'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/spaces/{slug}/problems/{problemSlug}/restore:
+    post:
+      operationId: restoreProblem
+      tags: [platform]
+      summary: Put a taken-down problem back (platform administrators)
+      description: '`409 NOT_SUSPENDED` when it is not down.'
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/ProblemSlug'
+      responses:
+        '200':
+          description: The problem is published again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemTakedown'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/spaces/{slug}/suspend:
+    post:
+      operationId: suspendSpace
+      tags: [platform]
+      summary: Suspend a Space (platform administrators)
+      description: |
+        Nobody reaches the Space, members included, until it is restored: its members get `403 SPACE_SUSPENDED`, everybody
+        else `404`. It leaves the public list and its members' lists. Nothing is deleted. `409 ALREADY_SUSPENDED`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: The Space is suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceSuspension'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/spaces/{slug}/restore:
+    post:
+      operationId: restoreSpace
+      tags: [platform]
+      summary: Lift the suspension of a Space (platform administrators)
+      description: '`409 NOT_SUSPENDED` when it is not suspended.'
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: The Space is open again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpaceSuspension'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/users/{username}/suspend:
+    post:
+      operationId: suspendUser
+      tags: [platform]
+      summary: Suspend an account (platform administrators)
+      description: |
+        Every call that carries the account's session answers `403 ACCOUNT_SUSPENDED` (with the reason in the message),
+        except `GET /api/v1/me` and `/api/v1/auth/*`. A platform administrator cannot be suspended
+        (`409 CANNOT_SUSPEND_ADMIN`); take the role away first. `409 ALREADY_SUSPENDED`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: The account is suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuspension'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/users/{username}/restore:
+    post:
+      operationId: restoreUser
+      tags: [platform]
+      summary: Lift the suspension of an account (platform administrators)
+      description: '`409 NOT_SUSPENDED` when it is not suspended.'
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '200':
+          description: The account works again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuspension'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/users/{username}/suspend-submissions:
+    post:
+      operationId: suspendUserSubmissions
+      tags: [platform]
+      summary: Stop an account from sending code (platform administrators)
+      description: |
+        New submissions and re-checks answer `403 SUBMISSIONS_SUSPENDED`; the rest of the account works. Submissions
+        already sent are judged. `409 CANNOT_SUSPEND_ADMIN`, `409 ALREADY_SUSPENDED`.
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuspendRequest'
+      responses:
+        '200':
+          description: The account may no longer send code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuspension'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/users/{username}/resume-submissions:
+    post:
+      operationId: resumeUserSubmissions
+      tags: [platform]
+      summary: Let an account send code again (platform administrators)
+      description: '`409 NOT_SUSPENDED` when its submissions are not suspended.'
+      security:
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '200':
+          description: The account may send code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuspension'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/admin/audit-log:
+    get:
+      operationId: listPlatformAudit
+      tags: [platform]
+      summary: What the platform administrators did, newest first (platform administrators)
+      description: |
+        Who did what to what and when (the administrator's username, the action, the object and its name at the time, the
+        reason). The record has no link to the object, so it outlives it. `actor` is null for work done on the command
+        line (granting or revoking the role). Filter by `target_type`, `target_id` and `actor` (a username).
+      security:
+        - session: []
+      parameters:
+        - name: target_type
+          in: query
+          schema:
+            type: string
+            enum: [problem, space, user, report]
+        - name: target_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of audit entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEntryPage'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
 
 components:
   responses:
@@ -6136,3 +6515,206 @@ components:
               type: integer
             submissions:
               type: integer
+    ReportProblemRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 1000
+          description: What is wrong; line breaks are allowed
+        category:
+          type: string
+          enum: [abuse, copyright, cheating, other]
+          default: other
+    ReportCreated:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open]
+        created_at:
+          type: string
+          format: date-time
+    Report:
+      type: object
+      required:
+        [
+          id,
+          status,
+          category,
+          reason,
+          created_at,
+          reporter,
+          problem,
+          resolved_at,
+          resolved_by,
+          resolution_note,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open, dismissed, actioned]
+        category:
+          type: string
+          enum: [abuse, copyright, cheating, other]
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        reporter:
+          type: object
+          required: [username, display_name]
+          properties:
+            username:
+              type: string
+            display_name:
+              type: string
+        problem:
+          type: object
+          required: [space, slug, title, status, suspended]
+          properties:
+            space:
+              type: string
+            slug:
+              type: string
+            title:
+              type: string
+            status:
+              type: string
+              enum: [draft, published, archived]
+            suspended:
+              type: boolean
+              description: Taken down by an administrator
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_by:
+          type: string
+          nullable: true
+          description: Username of the administrator who closed it
+        resolution_note:
+          type: string
+          nullable: true
+    ReportPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Report'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+    ResolveReportRequest:
+      type: object
+      required: [outcome]
+      additionalProperties: false
+      properties:
+        outcome:
+          type: string
+          enum: [dismissed, actioned]
+        note:
+          type: string
+          maxLength: 500
+    SuspendRequest:
+      type: object
+      required: [reason]
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+          description: Why; kept in the audit log, and shown to a suspended account in the error message
+    ProblemTakedown:
+      type: object
+      required: [space, slug, suspended, status]
+      properties:
+        space:
+          type: string
+        slug:
+          type: string
+        suspended:
+          type: boolean
+        status:
+          type: string
+          enum: [draft, published]
+    SpaceSuspension:
+      type: object
+      required: [slug, suspended]
+      properties:
+        slug:
+          type: string
+        suspended:
+          type: boolean
+    UserSuspension:
+      type: object
+      required: [username, suspended, submissions_suspended]
+      properties:
+        username:
+          type: string
+        suspended:
+          type: boolean
+        submissions_suspended:
+          type: boolean
+    AuditEntry:
+      type: object
+      required: [id, action, target_type, target_id, target_label, actor, data, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          description: e.g. problem.unpublished, space.suspended, user.suspended, user.submissions_suspended, report.resolved, admin.granted
+        target_type:
+          type: string
+          enum: [problem, space, user, report]
+        target_id:
+          type: string
+          format: uuid
+          nullable: true
+        target_label:
+          type: string
+          description: What a person reads, such as `space/problem` or a username, as it was at the time
+        actor:
+          type: string
+          nullable: true
+          description: Username of the administrator; null for the command line
+        data:
+          type: object
+          additionalProperties: true
+          description: For example the reason
+        created_at:
+          type: string
+          format: date-time
+    AuditEntryPage:
+      type: object
+      required: [items, page, page_size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer

@@ -12,6 +12,8 @@ class VError extends Error {
   status: number;
   error_code: string;
   details?: ErrorDetail[];
+  /** Sent as the Retry-After header (429 and 503 answers that say when to come back). */
+  retryAfterSeconds?: number;
 
   constructor({
     message,
@@ -83,6 +85,28 @@ class ConflictError extends VError {
   }
 }
 
+/** 403 that says why: the platform administrators stopped this account, Space or kind of action. */
+class SuspendedError extends VError {
+  constructor(
+    message: string,
+    errorCode: 'ACCOUNT_SUSPENDED' | 'SPACE_SUSPENDED' | 'SUBMISSIONS_SUSPENDED'
+  ) {
+    super({ message, status: 403, error_code: errorCode });
+  }
+}
+
+/** 429: over a limit. Says in the message and in Retry-After when to try again. */
+class RateLimitedError extends VError {
+  constructor(
+    retryAfterSeconds: number,
+    message = `Too many requests. Try again in ${Math.max(1, Math.ceil(retryAfterSeconds))} seconds.`,
+    errorCode = 'RATE_LIMITED'
+  ) {
+    super({ message, status: 429, error_code: errorCode });
+    this.retryAfterSeconds = Math.max(1, Math.ceil(retryAfterSeconds));
+  }
+}
+
 class GoneError extends VError {
   constructor(message = 'Gone') {
     super({ message, status: 410, error_code: 'GONE' });
@@ -110,6 +134,8 @@ export {
   NotFoundError,
   ConflictError,
   GoneError,
+  RateLimitedError,
   ServiceUnavailableError,
+  SuspendedError,
   InternalServerError,
 };

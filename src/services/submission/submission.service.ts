@@ -4,10 +4,13 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  RateLimitedError,
+  SuspendedError,
   UnauthorizedError,
   ValidationError,
   VError,
 } from '@/errors';
+import { DEFAULT_RATE_LIMITS } from '@/constants/limits';
 import { can } from '@/permissions/can';
 import TLogger, { Layer } from '@/logging/logger';
 import ProblemRepository from '@/repositories/problem.repository';
@@ -28,6 +31,9 @@ import {
 } from '@/services/submission/submission.mapper';
 import { Page } from '@/services/space/space.mapper';
 import { Role, SpaceAccess, actorOf, assertCan, resourceOf } from '@/services/space/space.access';
+
+/** A hint for Retry-After: a submission usually finishes within seconds. */
+const PENDING_RETRY_AFTER_SECONDS = 10;
 
 export interface CreateSubmissionInput {
   language: string;
@@ -59,6 +65,8 @@ export default class SubmissionService {
     private readonly problemService: ProblemService,
     private readonly dispatcher: JudgeDispatcher,
     private readonly tracks: TrackRepository,
+    /** How many submissions of one person may wait for Judge at once (GRD-55). */
+    private readonly maxPendingPerUser: number = DEFAULT_RATE_LIMITS.max_pending_submissions_per_user,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -152,6 +160,8 @@ export default class SubmissionService {
       ]);
     }
 
+    this.assertMayDispatch(user);
+    await this.assertRoomInQueue(user);
     const testStats = await this.tests.stats(this.prisma, version.id);
     const created = await this.submissions.create(this.prisma, {
       user_id: user.id,
@@ -261,6 +271,8 @@ export default class SubmissionService {
       throw new ForbiddenError('You cannot ask for this submission to be checked again.');
     }
 
+    this.assertMayDispatch(user);
+    await this.assertRoomInQueue(user);
     await this.prisma.$transaction(async (tx) => {
       await this.submissions.lock(tx, id);
       const current = await this.submissions.findById(tx, id);
@@ -280,6 +292,30 @@ export default class SubmissionService {
   }
 
   // --- helpers ------------------------------------------------------------
+
+  /**
+   * One person cannot fill the queue: past `maxPendingPerUser` submissions that are still
+   * queued or running, the next one waits for an earlier one to finish (429).
+   */
+  private assertMayDispatch(user: User) {
+    if (user.submissions_suspended_at !== null) {
+      throw new SuspendedError(
+        'Sending code from your account has been suspended by the platform administrators. Contact support.',
+        'SUBMISSIONS_SUSPENDED'
+      );
+    }
+  }
+
+  private async assertRoomInQueue(user: User) {
+    const pending = await this.submissions.countPending(this.prisma, user.id);
+    if (pending >= this.maxPendingPerUser) {
+      throw new RateLimitedError(
+        PENDING_RETRY_AFTER_SECONDS,
+        `You already have ${pending} submissions waiting to be judged. Wait for some of them to finish.`,
+        'TOO_MANY_PENDING_SUBMISSIONS'
+      );
+    }
+  }
 
   private async accessTo(user: User, submission: SubmissionRecord): Promise<SpaceAccess> {
     const space = await this.spaces.findById(this.prisma, submission.problem.space_id);
