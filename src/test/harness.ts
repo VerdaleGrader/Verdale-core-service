@@ -193,6 +193,8 @@ export function jobResult(job: JobRequest, overrides: Partial<JobResult> = {}): 
 
 export interface TestApp {
   app: ReturnType<typeof buildApp>;
+  /** Every route registered, e.g. `{ method: 'GET', url: '/api/v1/spaces/:slug' }`. */
+  routes: Array<{ method: string; url: string }>;
   judge: FakeJudge;
   /** Files Core wrote: private test bucket and public picture bucket. */
   storage: { tests: MemoryFileStorage; assets: MemoryFileStorage };
@@ -286,7 +288,19 @@ export async function createTestApp(
   const app = buildApp({
     version: 'test',
     readinessChecks: [],
-    api: { ...api, tuning: { ...api.tuning, ...tuning } },
+    api: {
+      ...api,
+      rateLimits: {
+        ...config.rateLimits,
+        windowMs: tuning.rateLimitWindowMs ?? config.rateLimits.windowMs,
+      },
+      tuning: { ...api.tuning, ...tuning },
+    },
+  });
+  // Every route the app registers, for tests that must cover them all (GRD-56).
+  const routes: TestApp['routes'] = [];
+  app.addHook('onRoute', (route) => {
+    for (const method of [route.method].flat()) routes.push({ method, url: route.url });
   });
   await app.ready();
 
@@ -377,6 +391,7 @@ export async function createTestApp(
 
   return {
     app,
+    routes,
     judge: judgeFake,
     storage: { tests, assets },
     ai: aiFake,

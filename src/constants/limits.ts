@@ -37,8 +37,26 @@ export const OUTPUT_LIMIT_KB = 65_536;
 export const IMAGE_MAX_BYTES = 2 * MIB;
 export const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
-/** Submissions per user per minute (GRD-44; GRD-55 may tune the number). */
-export const SUBMISSIONS_PER_MINUTE = 10;
+/**
+ * Rate limits (GRD-55). These are the defaults; every number can be set in the
+ * environment (see `rateLimits` in src/config and .env.example). A window is one minute.
+ */
+export const DEFAULT_RATE_LIMITS = {
+  /** Every request to the API, from one address. */
+  api_per_ip: 300,
+  /** Every request to the API, from one signed-in person (all their sessions and addresses). */
+  api_per_user: 600,
+  /** Starting a sign-in or finishing it, from one address. */
+  sign_in_per_ip: 20,
+  /** Submitting code and asking for a check again, by one person (GRD-44). */
+  submit_per_user: 10,
+  /** The same, from one address (several accounts behind one address share it). */
+  submit_per_ip: 30,
+  /** Submissions of one person that are still waiting for Judge or being judged. */
+  max_pending_submissions_per_user: 10,
+} as const;
+
+export const RATE_LIMIT_WINDOW_MS = 60_000;
 /** Re-checks (ISE) share the budget above; this is only for the route config. */
 export const SUBMISSION_LIST_MAX_PAGE_SIZE = 50;
 

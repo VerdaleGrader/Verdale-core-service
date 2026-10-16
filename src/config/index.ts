@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Environment } from '@/constants/environment';
+import { DEFAULT_RATE_LIMITS, RATE_LIMIT_WINDOW_MS } from '@/constants/limits';
 
 /**
  * Every setting Core reads from the environment. The service refuses to
@@ -8,6 +9,9 @@ import { Environment } from '@/constants/environment';
 /** An empty value (`GITHUB_CLIENT_ID=` in .env or Compose) means "not set". */
 const blankAsUnset = (value: unknown) => (value === '' ? undefined : value);
 const optionalText = z.preprocess(blankAsUnset, z.string().min(1).optional());
+
+/** A limit: a whole number from 1 to 100000 (0 would lock everybody out). */
+const limit = (fallback: number) => z.coerce.number().int().min(1).max(100_000).default(fallback);
 
 const schema = z
   .object({
@@ -33,6 +37,25 @@ const schema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    // Header that carries the real client address when Core sits behind a proxy that sets
+    // it itself (Cloudflare: "cf-connecting-ip"). Rate limits per address then use it
+    // instead of the leftmost X-Forwarded-For, which a client can forge. Only set it when
+    // nothing but that proxy can reach Core.
+    CLIENT_IP_HEADER: z.preprocess(
+      blankAsUnset,
+      z
+        .string()
+        .regex(/^[A-Za-z][A-Za-z0-9-]{0,63}$/)
+        .transform((name) => name.toLowerCase())
+        .optional()
+    ),
+    // --- Rate limits (GRD-55): requests (or submissions) per minute ---------
+    RATE_LIMIT_API_PER_IP: limit(DEFAULT_RATE_LIMITS.api_per_ip),
+    RATE_LIMIT_API_PER_USER: limit(DEFAULT_RATE_LIMITS.api_per_user),
+    RATE_LIMIT_SIGN_IN_PER_IP: limit(DEFAULT_RATE_LIMITS.sign_in_per_ip),
+    RATE_LIMIT_SUBMIT_PER_USER: limit(DEFAULT_RATE_LIMITS.submit_per_user),
+    RATE_LIMIT_SUBMIT_PER_IP: limit(DEFAULT_RATE_LIMITS.submit_per_ip),
+    MAX_PENDING_SUBMISSIONS_PER_USER: limit(DEFAULT_RATE_LIMITS.max_pending_submissions_per_user),
     GITHUB_CLIENT_ID: optionalText,
     GITHUB_CLIENT_SECRET: optionalText,
     GOOGLE_CLIENT_ID: optionalText,
@@ -176,6 +199,20 @@ export interface Configurations {
   judge: JudgeConfigurations;
   publish: { minHiddenTests: number };
   ai: AiConfigurations;
+  rateLimits: RateLimitConfigurations;
+}
+
+/** What one address and one person may do in a window (GRD-55). */
+export interface RateLimitConfigurations {
+  windowMs: number;
+  apiPerIp: number;
+  apiPerUser: number;
+  signInPerIp: number;
+  submitPerUser: number;
+  submitPerIp: number;
+  maxPendingSubmissionsPerUser: number;
+  /** Lower-case header that holds the client address; absent: the address Fastify works out. */
+  clientIpHeader?: string;
 }
 
 export interface StorageConfigurations {
@@ -322,6 +359,16 @@ export function loadConfig(env: NodeJS.ProcessEnv): Configurations {
         ? parseKeyring(value.AI_KEY_ENCRYPTION_KEYS)
         : undefined,
       models: { gemini: value.AI_GEMINI_MODEL, claude: value.AI_CLAUDE_MODEL },
+    },
+    rateLimits: {
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      apiPerIp: value.RATE_LIMIT_API_PER_IP,
+      apiPerUser: value.RATE_LIMIT_API_PER_USER,
+      signInPerIp: value.RATE_LIMIT_SIGN_IN_PER_IP,
+      submitPerUser: value.RATE_LIMIT_SUBMIT_PER_USER,
+      submitPerIp: value.RATE_LIMIT_SUBMIT_PER_IP,
+      maxPendingSubmissionsPerUser: value.MAX_PENDING_SUBMISSIONS_PER_USER,
+      clientIpHeader: value.CLIENT_IP_HEADER,
     },
   };
 }

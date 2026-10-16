@@ -2,7 +2,12 @@ import type { User } from '../../../generated/prisma/client';
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '@/errors';
 import { Action, can } from '@/permissions/can';
 import type { ProblemWithVersion } from '@/repositories/problem.repository';
-import { SpaceAccess, actorOf, resourceOf } from '@/services/space/space.access';
+import {
+  SpaceAccess,
+  actorOf,
+  assertNotSuspended,
+  resourceOf,
+} from '@/services/space/space.access';
 
 /** Actions that change a problem; they stop at an archived Space with a clearer message than 403. */
 export type AuthorAction =
@@ -18,6 +23,7 @@ export type AuthorAction =
  * archived Space is read-only; someone without the role for it is 403.
  */
 export function assertAuthor(user: User | null, action: AuthorAction, access: SpaceAccess): User {
+  assertNotSuspended(access);
   const actor = actorOf(user);
   const resource = resourceOf(access);
   if (!can(actor, 'space.view', resource)) throw new NotFoundError('Space not found.');

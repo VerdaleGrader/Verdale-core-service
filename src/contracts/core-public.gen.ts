@@ -1904,6 +1904,260 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/spaces/{slug}/problems/{problemSlug}/report': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report a problem to the platform administrators
+     * @description Any signed-in person who can open the problem may report it (GRD-58). The report holds the reason and a category and
+     *     waits for an administrator. One open report per person and problem: asking again is `409 ALREADY_REPORTED`.
+     *     A problem the person cannot see (a draft, taken down, outside their Tracks) is `404`. At most 5 reports a minute
+     *     per person (`429 RATE_LIMITED`).
+     */
+    post: operations['reportProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/reports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Reports of problems (platform administrators)
+     * @description Open reports come oldest first, resolved ones newest first. Every `/api/v1/admin/*` route is for platform
+     *     administrators (a role above the Spaces, given on the command line only, `docs/platform-admin.md`). Anybody else
+     *     signed in gets `404` as for a route that does not exist; a visitor gets `401`.
+     */
+    get: operations['listReports'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/reports/{reportId}/resolve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Close a report as dismissed or actioned (platform administrators)
+     * @description Records who closed it, when and a note. `409 REPORT_RESOLVED` when it was closed before. Audited.
+     */
+    post: operations['resolveReport'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/spaces/{slug}/problems/{problemSlug}/unpublish': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Take a published problem down at once (platform administrators)
+     * @description The problem becomes a draft for everybody who is not staff of its Space: solvers, outsiders and visitors get `404`,
+     *     submissions are refused and it leaves every list. Its published version is not touched; its authors cannot publish,
+     *     update, archive or delete it. `409 NOT_PUBLISHED` for anything that is not published, `409 ALREADY_SUSPENDED`
+     *     when it is already down. The reason is recorded in the audit log.
+     */
+    post: operations['unpublishProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/spaces/{slug}/problems/{problemSlug}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Put a taken-down problem back (platform administrators)
+     * @description `409 NOT_SUSPENDED` when it is not down.
+     */
+    post: operations['restoreProblem'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/spaces/{slug}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Suspend a Space (platform administrators)
+     * @description Nobody reaches the Space, members included, until it is restored: its members get `403 SPACE_SUSPENDED`, everybody
+     *     else `404`. It leaves the public list and its members' lists. Nothing is deleted. `409 ALREADY_SUSPENDED`.
+     */
+    post: operations['suspendSpace'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/spaces/{slug}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Lift the suspension of a Space (platform administrators)
+     * @description `409 NOT_SUSPENDED` when it is not suspended.
+     */
+    post: operations['restoreSpace'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users/{username}/suspend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Suspend an account (platform administrators)
+     * @description Every call that carries the account's session answers `403 ACCOUNT_SUSPENDED` (with the reason in the message),
+     *     except `GET /api/v1/me` and `/api/v1/auth/*`. A platform administrator cannot be suspended
+     *     (`409 CANNOT_SUSPEND_ADMIN`); take the role away first. `409 ALREADY_SUSPENDED`.
+     */
+    post: operations['suspendUser'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users/{username}/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Lift the suspension of an account (platform administrators)
+     * @description `409 NOT_SUSPENDED` when it is not suspended.
+     */
+    post: operations['restoreUser'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users/{username}/suspend-submissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop an account from sending code (platform administrators)
+     * @description New submissions and re-checks answer `403 SUBMISSIONS_SUSPENDED`; the rest of the account works. Submissions
+     *     already sent are judged. `409 CANNOT_SUSPEND_ADMIN`, `409 ALREADY_SUSPENDED`.
+     */
+    post: operations['suspendUserSubmissions'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/users/{username}/resume-submissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Let an account send code again (platform administrators)
+     * @description `409 NOT_SUSPENDED` when its submissions are not suspended.
+     */
+    post: operations['resumeUserSubmissions'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/audit-log': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What the platform administrators did, newest first (platform administrators)
+     * @description Who did what to what and when (the administrator's username, the action, the object and its name at the time, the
+     *     reason). The record has no link to the object, so it outlives it. `actor` is null for work done on the command
+     *     line (granting or revoking the role). Filter by `target_type`, `target_id` and `actor` (a username).
+     */
+    get: operations['listPlatformAudit'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3150,6 +3404,109 @@ export interface components {
         members: number;
         submissions: number;
       };
+    };
+    ReportProblemRequest: {
+      /** @description What is wrong; line breaks are allowed */
+      reason: string;
+      /**
+       * @default other
+       * @enum {string}
+       */
+      category: 'abuse' | 'copyright' | 'cheating' | 'other';
+    };
+    ReportCreated: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {string} */
+      status: 'open';
+      /** Format: date-time */
+      created_at: string;
+    };
+    Report: {
+      /** Format: uuid */
+      id: string;
+      /** @enum {string} */
+      status: 'open' | 'dismissed' | 'actioned';
+      /** @enum {string} */
+      category: 'abuse' | 'copyright' | 'cheating' | 'other';
+      reason: string;
+      /** Format: date-time */
+      created_at: string;
+      reporter: {
+        username: string;
+        display_name: string;
+      };
+      problem: {
+        space: string;
+        slug: string;
+        title: string;
+        /** @enum {string} */
+        status: 'draft' | 'published' | 'archived';
+        /** @description Taken down by an administrator */
+        suspended: boolean;
+      };
+      /** Format: date-time */
+      resolved_at: string | null;
+      /** @description Username of the administrator who closed it */
+      resolved_by: string | null;
+      resolution_note: string | null;
+    };
+    ReportPage: {
+      items: components['schemas']['Report'][];
+      page: number;
+      page_size: number;
+      total: number;
+    };
+    ResolveReportRequest: {
+      /** @enum {string} */
+      outcome: 'dismissed' | 'actioned';
+      note?: string;
+    };
+    SuspendRequest: {
+      /** @description Why; kept in the audit log, and shown to a suspended account in the error message */
+      reason: string;
+    };
+    ProblemTakedown: {
+      space: string;
+      slug: string;
+      suspended: boolean;
+      /** @enum {string} */
+      status: 'draft' | 'published';
+    };
+    SpaceSuspension: {
+      slug: string;
+      suspended: boolean;
+    };
+    UserSuspension: {
+      username: string;
+      suspended: boolean;
+      submissions_suspended: boolean;
+    };
+    AuditEntry: {
+      /** Format: uuid */
+      id: string;
+      /** @description e.g. problem.unpublished, space.suspended, user.suspended, user.submissions_suspended, report.resolved, admin.granted */
+      action: string;
+      /** @enum {string} */
+      target_type: 'problem' | 'space' | 'user' | 'report';
+      /** Format: uuid */
+      target_id: string | null;
+      /** @description What a person reads, such as `space/problem` or a username, as it was at the time */
+      target_label: string;
+      /** @description Username of the administrator; null for the command line */
+      actor: string | null;
+      /** @description For example the reason */
+      data: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      created_at: string;
+    };
+    AuditEntryPage: {
+      items: components['schemas']['AuditEntry'][];
+      page: number;
+      page_size: number;
+      total: number;
     };
   };
   responses: {
@@ -6472,6 +6829,355 @@ export interface operations {
       403: components['responses']['Error'];
       404: components['responses']['Error'];
       409: components['responses']['Error'];
+    };
+  };
+  reportProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReportProblemRequest'];
+      };
+    };
+    responses: {
+      /** @description The report is recorded */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReportCreated'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      403: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+      429: components['responses']['Error'];
+    };
+  };
+  listReports: {
+    parameters: {
+      query?: {
+        status?: 'open' | 'dismissed' | 'actioned' | 'all';
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of reports */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReportPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+    };
+  };
+  resolveReport: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        reportId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResolveReportRequest'];
+      };
+    };
+    responses: {
+      /** @description The report, now closed */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Report'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  unpublishProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SuspendRequest'];
+      };
+    };
+    responses: {
+      /** @description The problem is down */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemTakedown'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  restoreProblem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+        /** @description Problem slug (case-insensitive), unique inside its Space */
+        problemSlug: components['parameters']['ProblemSlug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The problem is published again */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ProblemTakedown'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  suspendSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SuspendRequest'];
+      };
+    };
+    responses: {
+      /** @description The Space is suspended */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SpaceSuspension'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  restoreSpace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Space slug (case-insensitive) */
+        slug: components['parameters']['Slug'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The Space is open again */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SpaceSuspension'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  suspendUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SuspendRequest'];
+      };
+    };
+    responses: {
+      /** @description The account is suspended */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserSuspension'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  restoreUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The account works again */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserSuspension'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  suspendUserSubmissions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SuspendRequest'];
+      };
+    };
+    responses: {
+      /** @description The account may no longer send code */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserSuspension'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  resumeUserSubmissions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        username: components['parameters']['Username'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The account may send code */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserSuspension'];
+        };
+      };
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
+      409: components['responses']['Error'];
+    };
+  };
+  listPlatformAudit: {
+    parameters: {
+      query?: {
+        target_type?: 'problem' | 'space' | 'user' | 'report';
+        target_id?: string;
+        actor?: string;
+        page?: components['parameters']['Page'];
+        page_size?: components['parameters']['PageSize'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description A page of audit entries */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditEntryPage'];
+        };
+      };
+      400: components['responses']['Error'];
+      401: components['responses']['Error'];
+      404: components['responses']['Error'];
     };
   };
 }

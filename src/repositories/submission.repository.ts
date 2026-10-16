@@ -105,6 +105,13 @@ export default class SubmissionRepository {
     return { rows, total };
   }
 
+  /** Submissions of one user that Judge has not finished: queued or running (GRD-55). */
+  countPending(db: Db, userId: string) {
+    return db.submission.count({
+      where: { user_id: userId, status: { in: ['queued', 'running'] } },
+    });
+  }
+
   /**
    * The best finished submission of one user for a problem: the most tests passed, and among
    * equals the one sent first. A submission that is still queued or running, ended in a system

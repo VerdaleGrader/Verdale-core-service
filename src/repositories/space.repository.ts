@@ -117,6 +117,8 @@ export default class SpaceRepository {
     const where: Prisma.MembershipWhereInput = {
       user_id: userId,
       space: {
+        // A Space the platform suspended is not listed, not even for its members (GRD-58).
+        suspended_at: null,
         archived_at: filter.archived ? { not: null } : null,
         ...(filter.q ? { name: { contains: filter.q, mode: 'insensitive' } } : {}),
       },
@@ -137,6 +139,7 @@ export default class SpaceRepository {
   async listPublic(db: Db, filter: SpaceListFilter) {
     const where: Prisma.SpaceWhereInput = {
       visibility: 'public',
+      suspended_at: null,
       archived_at: filter.archived ? { not: null } : null,
       ...(filter.q
         ? {

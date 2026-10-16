@@ -8,7 +8,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/errors';
 import { Db, isUniqueViolation } from '@/repositories/db';
 import SpaceRepository from '@/repositories/space.repository';
 import TrackRepository from '@/repositories/track.repository';
-import { Role, SpaceAccess, assertCan } from '@/services/space/space.access';
+import { Role, SpaceAccess, assertCan, assertNotSuspended } from '@/services/space/space.access';
 import { Page, SpaceDto, toSpaceDto } from '@/services/space/space.mapper';
 
 export interface CreateSpaceInput {
@@ -45,7 +45,10 @@ export default class SpaceService {
     const space = await this.spaces.findBySlug(db, slug.toLowerCase());
     if (!space) throw new NotFoundError('Space not found.');
     const membership = user ? await this.spaces.findMembership(db, space.id, user.id) : null;
-    return { space, role: (membership?.role as Role | undefined) ?? null };
+    const access: SpaceAccess = { space, role: (membership?.role as Role | undefined) ?? null };
+    // Every route that reaches a Space starts here, so a suspended one is closed everywhere.
+    assertNotSuspended(access);
+    return access;
   }
 
   async create(user: User, input: CreateSpaceInput): Promise<SpaceDto> {
