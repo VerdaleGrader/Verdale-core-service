@@ -503,3 +503,59 @@ export const testDetailQuery = z.object({
   from_line: z.coerce.number().int().min(1).max(100_000_000).default(1),
   max_lines: z.coerce.number().int().min(1).max(1000).default(10),
 });
+
+// --- Platform administration (GRD-58) -------------------------------------------
+
+/** Why an administrator did something; kept in the audit log and shown to the people it concerns. */
+const adminReason = z
+  .string()
+  .trim()
+  .min(3, 'Say why, in at least 3 characters.')
+  .max(500, 'Use at most 500 characters.')
+  .refine(hasNoControlCharacters, CONTROL_MESSAGE);
+
+export const suspendBody = z.object({ reason: adminReason }).strict();
+
+export const reportProblemBody = z
+  .object({
+    // A report may have several lines, so line breaks are allowed here (other control characters are not).
+    reason: z
+      .string()
+      .trim()
+      .min(3, 'Say what is wrong, in at least 3 characters.')
+      .max(1000, 'Use at most 1000 characters.')
+      .refine(
+        (value) => !/[\p{Cc}\u2028\u2029]/u.test(value.replace(/[\n\r\t]/g, '')),
+        CONTROL_MESSAGE
+      ),
+    category: z.enum(['abuse', 'copyright', 'cheating', 'other']).default('other'),
+  })
+  .strict();
+
+export const reportParams = z.object({ reportId: z.uuid() });
+
+export const resolveReportBody = z
+  .object({
+    outcome: z.enum(['dismissed', 'actioned']),
+    note: z
+      .string()
+      .trim()
+      .max(500, 'Use at most 500 characters.')
+      .refine(hasNoControlCharacters, CONTROL_MESSAGE)
+      .optional(),
+  })
+  .strict();
+
+export const adminReportsQuery = z.object({
+  status: z.enum(['open', 'dismissed', 'actioned', 'all']).default('open'),
+  page: pagination.page,
+  page_size: pagination.page_size,
+});
+
+export const adminAuditQuery = z.object({
+  target_type: z.enum(['problem', 'space', 'user', 'report']).optional(),
+  target_id: z.uuid().optional(),
+  actor: z.string().trim().min(1).max(64).optional(),
+  page: pagination.page,
+  page_size: pagination.page_size,
+});

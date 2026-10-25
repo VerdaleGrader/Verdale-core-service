@@ -12,16 +12,25 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
+  id                            String       @id @default(uuid()) @db.Uuid
   // Stored lower-case; uniqueness is case-insensitive by construction.
-  email        String   @unique @db.VarChar(254)
-  username     String   @unique @db.VarChar(32)
-  display_name String   @db.VarChar(64)
+  email                         String       @unique @db.VarChar(254)
+  username                      String       @unique @db.VarChar(32)
+  display_name                  String       @db.VarChar(64)
   // Profile picture URL from the sign-in provider, refreshed at every login
   // (GRD-68). Null when the provider has none; the web app then shows initials.
-  avatar_url   String?  @db.VarChar(2048)
-  created_at   DateTime @default(now()) @db.Timestamptz(3)
-  updated_at   DateTime @updatedAt @db.Timestamptz(3)
+  avatar_url                    String?      @db.VarChar(2048)
+  // Platform administration (GRD-58), separate from the roles inside Spaces. Only the
+  // command line grants it (docs/platform-admin.md).
+  platform_role                 PlatformRole @default(user)
+  // Suspended: every call but reading /me and signing out answers 403 ACCOUNT_SUSPENDED.
+  suspended_at                  DateTime?    @db.Timestamptz(3)
+  suspension_reason             String?      @db.VarChar(500)
+  // Only submitting code is stopped; the rest of the account works.
+  submissions_suspended_at      DateTime?    @db.Timestamptz(3)
+  submissions_suspension_reason String?      @db.VarChar(500)
+  created_at                    DateTime     @default(now()) @db.Timestamptz(3)
+  updated_at                    DateTime     @updatedAt @db.Timestamptz(3)
 
   oauth_accounts        OAuthAccount[]
   sessions              Session[]
@@ -40,6 +49,9 @@ model User {
   verification_runs     VerificationRun[]   @relation("VerificationRequester")
   history_entries       ProblemHistory[]    @relation("HistoryActor")
   legal_acceptances     LegalAcceptance[]
+  reports_made          ProblemReport[]     @relation("ReportReporter")
+  reports_resolved      ProblemReport[]     @relation("ReportResolver")
+  platform_audit        PlatformAuditLog[]
 
   @@map("users")
 }
@@ -120,20 +132,23 @@ enum InviteStatus {
 }
 
 model Space {
-  id            String          @id @default(uuid()) @db.Uuid
+  id                String          @id @default(uuid()) @db.Uuid
   // Who created it. The owner is the one membership with role = owner (exactly
   // one; ownership can be handed over); this column never changes.
-  created_by_id String          @db.Uuid
-  name          String          @db.VarChar(80)
+  created_by_id     String          @db.Uuid
+  name              String          @db.VarChar(80)
   // Lower-case; shares one namespace with usernames (a personal Space's slug
   // is its owner's username), so URLs like /<slug> never collide.
-  slug          String          @unique @db.VarChar(32)
-  description   String          @default("") @db.VarChar(500)
-  visibility    SpaceVisibility @default(private)
-  is_personal   Boolean         @default(false)
-  archived_at   DateTime?       @db.Timestamptz(3)
-  created_at    DateTime        @default(now()) @db.Timestamptz(3)
-  updated_at    DateTime        @updatedAt @db.Timestamptz(3)
+  slug              String          @unique @db.VarChar(32)
+  description       String          @default("") @db.VarChar(500)
+  visibility        SpaceVisibility @default(private)
+  is_personal       Boolean         @default(false)
+  archived_at       DateTime?       @db.Timestamptz(3)
+  // Suspended by the platform (GRD-58): nobody reaches it, members included, until restored.
+  suspended_at      DateTime?       @db.Timestamptz(3)
+  suspension_reason String?         @db.VarChar(500)
+  created_at        DateTime        @default(now()) @db.Timestamptz(3)
+  updated_at        DateTime        @updatedAt @db.Timestamptz(3)
 
   created_by  User         @relation(fields: [created_by_id], references: [id])
   memberships Membership[]
@@ -249,6 +264,10 @@ model Problem {
   // published. Set in the same transaction that creates the first version.
   current_version_id String?       @unique @db.Uuid
   archived_at        DateTime?     @db.Timestamptz(3)
+  // Taken down by the platform (GRD-58): while set, `status` is draft (so solvers cannot
+  // reach it) although its version stays published; restoring puts `published` back.
+  suspended_at       DateTime?     @db.Timestamptz(3)
+  suspension_reason  String?       @db.VarChar(500)
   created_at         DateTime      @default(now()) @db.Timestamptz(3)
   updated_at         DateTime      @updatedAt @db.Timestamptz(3)
 
@@ -259,6 +278,7 @@ model Problem {
   submissions        Submission[]
   collection_entries CollectionProblem[]
   history            ProblemHistory[]
+  reports            ProblemReport[]
 
   @@unique([space_id, slug])
   // Problem lists of a Space by status, newest change first.
@@ -493,6 +513,8 @@ model Submission {
   @@index([track_id, created_at(sort: Desc)])
   // The dispatcher looks for queued submissions that are due.
   @@index([status, next_dispatch_at])
+  // How many submissions of one person are still waiting or running (GRD-55).
+  @@index([user_id, status])
   @@map("submissions")
 }
 
@@ -820,4 +842,74 @@ model AiTestItem {
 
   @@index([job_id, position])
   @@map("ai_test_items")
+}
+
+// --- Platform administration (M4: GRD-58) --------------------------------------
+//
+// A role above the Spaces, reports from users, and the record of what the
+// administrators did. Docs: docs/platform-admin.md.
+
+enum PlatformRole {
+  user
+  admin
+}
+
+enum ReportStatus {
+  open
+  dismissed
+  actioned
+}
+
+enum ReportCategory {
+  abuse
+  copyright
+  cheating
+  other
+}
+
+// A user's report of a problem they can see.
+model ProblemReport {
+  id              String         @id @default(uuid()) @db.Uuid
+  problem_id      String         @db.Uuid
+  reporter_id     String         @db.Uuid
+  category        ReportCategory @default(other)
+  reason          String         @db.VarChar(1000)
+  status          ReportStatus   @default(open)
+  resolved_by_id  String?        @db.Uuid
+  resolved_at     DateTime?      @db.Timestamptz(3)
+  resolution_note String?        @db.VarChar(500)
+  created_at      DateTime       @default(now()) @db.Timestamptz(3)
+
+  problem     Problem @relation(fields: [problem_id], references: [id], onDelete: Cascade)
+  reporter    User    @relation("ReportReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  resolved_by User?   @relation("ReportResolver", fields: [resolved_by_id], references: [id], onDelete: SetNull)
+
+  // Reports waiting for an administrator, oldest first; reports of one problem.
+  @@index([status, created_at])
+  @@index([problem_id, created_at(sort: Desc)])
+  // One open report per person and problem is kept by the service: asking again changes nothing.
+  @@map("problem_reports")
+}
+
+// Who did what to what, on the platform level. Has no foreign key to the object,
+// so the record outlives it; the actor is null for work done on the command line.
+model PlatformAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actor_id     String?  @db.Uuid
+  // e.g. problem.unpublished, space.suspended, user.suspended, admin.granted
+  action       String   @db.VarChar(64)
+  // problem, space, user or report
+  target_type  String   @db.VarChar(16)
+  target_id    String?  @db.Uuid
+  // What a person reads: the slug or username at the time.
+  target_label String   @db.VarChar(128)
+  data         Json     @default("{}")
+  created_at   DateTime @default(now()) @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actor_id], references: [id], onDelete: SetNull)
+
+  @@index([created_at(sort: Desc)])
+  @@index([target_type, target_id, created_at(sort: Desc)])
+  @@index([actor_id, created_at(sort: Desc)])
+  @@map("platform_audit_logs")
 }

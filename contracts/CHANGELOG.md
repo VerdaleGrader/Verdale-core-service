@@ -9,6 +9,15 @@ Versions follow semver. The version in `VERSION` must match `info.version` of bo
 - A new `Verdict` or `Language` value is additive for Judge but needs Core and Frontend to know it before Judge starts emitting it: deploy Core and Frontend first.
 - After changing anything here, bump `VERSION` and both `info.version`, regenerate code in this repo (`npm run contracts:generate`), then each consumer re-pins with its own `contracts:sync` script.
 
+## 0.11.0 (2026-10-17)
+
+- Additive. Platform administration (GRD-58) and rate limits (GRD-55). Judge is unchanged (its version is bumped only to keep the two files in step).
+  - **Reports.** `POST .../problems/{problemSlug}/report` (`ReportProblemRequest`: `reason`, optional `category`; `ReportCreated`). One open report per person and problem (409 `ALREADY_REPORTED`); 5 a minute per person.
+  - **Admin API**, for platform administrators only (a role above the Spaces, given on the command line; anybody else signed in gets 404, a visitor 401): `GET /admin/reports`, `POST /admin/reports/{reportId}/resolve`, `POST /admin/spaces/{slug}/problems/{problemSlug}/unpublish` and `/restore`, `POST /admin/spaces/{slug}/suspend` and `/restore`, `POST /admin/users/{username}/suspend`, `/restore`, `/suspend-submissions`, `/resume-submissions`, `GET /admin/audit-log`.
+  - **Errors added:** 403 `ACCOUNT_SUSPENDED` (every call of a suspended account except `GET /me` and `/auth/*`), 403 `SPACE_SUSPENDED` (members of a suspended Space), 403 `SUBMISSIONS_SUSPENDED`, 429 `TOO_MANY_PENDING_SUBMISSIONS` (a person already has the configured number of submissions queued or running; with `Retry-After`), 409 `ALREADY_REPORTED`, `REPORT_RESOLVED`, `ALREADY_SUSPENDED`, `NOT_SUSPENDED`, `CANNOT_SUSPEND_ADMIN`.
+  - **Rate limits (GRD-55).** Every 429 now carries a `Retry-After` header (seconds) as well as the time in the message. The limits are set in Core's environment (`docs/rate-limits.md`); `Limited to 10 submissions per minute` in `createSubmission` is the default.
+- Deploy order: Core first (migrations `submission_pending_index` and `platform_administration`), then Frontend re-pins with `contracts:sync` when it needs the new calls; the web app has no screen for them yet, and the new error codes show as ordinary errors until it does. A suspended account sees `ACCOUNT_SUSPENDED` on every call; nobody is suspended by the migration. Judge needs no deploy.
+
 ## 0.10.0 (2026-10-15)
 
 - Additive. AI testcase generation, bring your own key (GRD-124). Judge is unchanged (its version is bumped only to keep the two files in step): Core uses the existing `generate` job kind.

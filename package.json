@@ -22,6 +22,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "platform:grant": "ts-node --require tsconfig-paths/register src/cli/platform-admin.ts grant",
+    "platform:revoke": "ts-node --require tsconfig-paths/register src/cli/platform-admin.ts revoke",
+    "platform:list": "ts-node --require tsconfig-paths/register src/cli/platform-admin.ts list",
     "contracts:generate": "openapi-typescript contracts/core-public.openapi.yaml -o src/contracts/core-public.gen.ts && openapi-typescript contracts/judge.openapi.yaml -o src/contracts/judge.gen.ts && prettier --write src/contracts",
     "contracts:check": "node scripts/contracts-check.mjs"
   },

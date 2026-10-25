@@ -39,6 +39,8 @@ export interface SpaceFacts {
   archived: boolean;
   /** The actor's role in this Space, or null when not a member. */
   role: SpaceRoleName | null;
+  /** Suspended by the platform administrators (GRD-58): nobody may do anything in it. */
+  suspended?: boolean;
 }
 
 export interface Resource {
@@ -116,6 +118,8 @@ export const isReader = (role: SpaceRoleName | null) => role !== null && READERS
  * track.view_progress: reading other people's progression, for the staff.
  */
 export function can(actor: Actor, action: Action, resource: Resource): boolean {
+  // A Space the platform has suspended is closed to everybody, members included, until restored.
+  if (resource.space.suspended) return false;
   const { visibility, archived, role } = resource.space;
   const isMember = role !== null;
   const canSee = visibility === 'public' || isMember;
