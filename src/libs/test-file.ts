@@ -8,10 +8,12 @@ import { createHash } from 'node:crypto';
  *    except TAB, LF and CR) and invalid UTF-8 mean "binary": refused.
  *  - A leading byte order mark is removed.
  *  - CRLF and lone CR become LF.
- *  - Trailing blank lines are removed and a non-empty file ends with exactly
- *    one LF. Trailing spaces inside lines are kept (an input may need them);
- *    Judge's line checker ignores them when comparing outputs anyway.
- *  - An empty file stays empty (some problems have no input).
+ *  - Trailing blank lines are kept (an input may end with a blank line that
+ *    the program reads to know where to stop) and a non-empty file ends with
+ *    an LF. Trailing spaces inside lines are kept too; Judge's line checker
+ *    ignores both when comparing outputs anyway.
+ *  - An empty file, or one with nothing but newlines, becomes empty (some
+ *    problems have no input).
  *
  * The SHA-256 and the size are of the normalised bytes, so the same test
  * saved with different line endings is stored once.
@@ -68,8 +70,9 @@ export function normalizeTestFile(raw: Buffer, { maxBytes }: { maxBytes: number 
     );
   }
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-  text = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
-  const bytes = Buffer.from(text.length === 0 ? '' : `${text}\n`, 'utf8');
+  text = text.replace(/\r\n?/g, '\n');
+  if (/^\n*$/.test(text)) text = '';
+  const bytes = Buffer.from(text === '' || text.endsWith('\n') ? text : `${text}\n`, 'utf8');
   if (bytes.length > maxBytes) {
     throw new TestFileError(`is larger than ${formatBytes(maxBytes)}`, 'TOO_LARGE');
   }

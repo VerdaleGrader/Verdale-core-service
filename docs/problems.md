@@ -84,7 +84,7 @@ Uploaded as `multipart/form-data` (`input`, `output`, `is_sample`), so the serve
 1. UTF-8 text only. A NUL byte, any other control character except tab, LF and CR, or invalid UTF-8 means "binary" and is refused, with the file name, the reason and (for binary data) the byte offset.
 2. A leading byte order mark is removed.
 3. CRLF and lone CR become LF.
-4. Trailing blank lines are removed and a non-empty file ends with exactly one LF. Trailing spaces inside lines are kept (an input may need them); Judge's line checker ignores them when comparing outputs. An empty file stays empty.
+4. Trailing blank lines are kept (an input may end with one) and a non-empty file ends with an LF. Trailing spaces inside lines are kept (an input may need them); Judge's line checker ignores both when comparing outputs. An empty file, or one with only newlines, becomes empty.
 
 The SHA-256 and the size are of the normalised content, so the same test saved with different line endings is stored once. The raw upload is capped at the file limit before normalising.
 

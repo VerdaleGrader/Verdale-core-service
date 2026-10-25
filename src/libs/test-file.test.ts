@@ -25,9 +25,9 @@ describe('normalizeTestFile (GRD-25)', () => {
 
   describe('end of file', () => {
     it('adds the missing final newline', () => expect(text('42')).toBe('42\n'));
-    it('collapses several trailing newlines to one', () => expect(text('42\n\n\n')).toBe('42\n'));
-    it('removes trailing blank lines written as CRLF', () =>
-      expect(text('42\r\n\r\n\r\n')).toBe('42\n'));
+    it('keeps trailing blank lines', () => expect(text('42\n\n\n')).toBe('42\n\n\n'));
+    it('keeps trailing blank lines written as CRLF', () =>
+      expect(text('42\r\n\r\n\r\n')).toBe('42\n\n\n'));
     it('keeps blank lines in the middle', () => expect(text('a\n\nb\n')).toBe('a\n\nb\n'));
     it('keeps trailing spaces inside lines (an input may need them)', () =>
       expect(text('a  \nb \n')).toBe('a  \nb \n'));
